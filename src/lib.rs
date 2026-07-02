@@ -1,8 +1,8 @@
-// src/lib.rs
-
 use chrono::{DateTime, Local};
 use rayon::prelude::*;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::{fs, io};
 use walkdir::WalkDir;
 
@@ -19,59 +19,110 @@ pub enum FsizeError {
 pub struct Color;
 
 impl Color {
-    pub const RED: &'static str = "\x1b[1;31m";
-    pub const YELLOW: &'static str = "\x1b[33m";
-    pub const RESET: &'static str = "\x1b[0m";
+    pub fn red() -> &'static str {
+        if Self::enabled() {
+            "\x1b[1;31m"
+        } else {
+            ""
+        }
+    }
+
+    pub fn yellow() -> &'static str {
+        if Self::enabled() {
+            "\x1b[33m"
+        } else {
+            ""
+        }
+    }
+
+    pub fn reset() -> &'static str {
+        if Self::enabled() {
+            "\x1b[0m"
+        } else {
+            ""
+        }
+    }
+
+    fn enabled() -> bool {
+        std::env::var_os("NO_COLOR").is_none() && std::io::stderr().is_terminal()
+    }
 }
 
-pub fn compute_total_size(path: &Path) -> Result<u64, FsizeError> {
+#[cfg(unix)]
+fn is_virtual_fs(p: &Path) -> bool {
+    p.starts_with("/proc") || p.starts_with("/sys") || p.starts_with("/dev")
+}
+
+#[cfg(not(unix))]
+fn is_virtual_fs(_p: &Path) -> bool {
+    false
+}
+
+#[derive(Debug, Default)]
+pub struct WalkOutcome {
+    pub total: u64,
+    pub warnings: Vec<String>,
+}
+
+pub fn compute_total_size(path: &Path) -> Result<WalkOutcome, FsizeError> {
     let meta = fs::symlink_metadata(path).map_err(|e| FsizeError::Io {
         path: path.to_owned(),
         source: e,
     })?;
 
-    if meta.file_type().is_dir() {
-        let total = WalkDir::new(path)
-            .follow_links(false)
-            .into_iter()
-            .par_bridge()
-            .filter_map(|entry| match entry {
-                Ok(e) => match e.metadata() {
-                    Ok(m) => {
-                        if m.is_dir() {
-                            Some(0)
-                        } else {
-                            Some(m.len())
-                        }
-                    }
-                    Err(e) => {
-                        let p = e.path()?;
-                        eprintln!(
-                            "{}[WARNING]{} cannot access `{}`: {}",
-                            Color::YELLOW,
-                            Color::RESET,
-                            p.display(),
-                            e
-                        );
+    if !meta.file_type().is_dir() {
+        return Ok(WalkOutcome {
+            total: meta.len(),
+            warnings: Vec::new(),
+        });
+    }
+
+    let warnings: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    let push_warning = |msg: String| {
+        warnings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(msg);
+    };
+
+    let total = WalkDir::new(path)
+        .follow_links(false)
+        .into_iter()
+        .par_bridge()
+        .filter_map(|entry| {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    push_warning(format!("walkdir error: {e}"));
+                    return None;
+                }
+            };
+
+            let p = entry.path();
+            if is_virtual_fs(p) {
+                return None;
+            }
+
+            match entry.metadata() {
+                Ok(m) => {
+                    if m.is_file() {
+                        Some(m.len())
+                    } else {
                         None
                     }
-                },
+                }
                 Err(e) => {
-                    eprintln!(
-                        "{}[WARNING]{} walkdir error: {}",
-                        Color::YELLOW,
-                        Color::RESET,
-                        e
-                    );
+                    push_warning(format!("cannot access `{}`: {e}", p.display()));
                     None
                 }
-            })
-            .sum::<u64>();
+            }
+        })
+        .sum::<u64>();
 
-        Ok(total)
-    } else {
-        Ok(meta.len())
-    }
+    Ok(WalkOutcome {
+        total,
+        warnings: warnings.into_inner().unwrap_or_else(|p| p.into_inner()),
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -87,29 +138,33 @@ pub enum Unit {
     TiB,
 }
 
-impl Unit {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for Unit {
+    type Err = FsizeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_lowercase().as_str() {
-            "b" => Some(Unit::B),
-            "kb" => Some(Unit::KB),
-            "mb" => Some(Unit::MB),
-            "gb" => Some(Unit::GB),
-            "tb" => Some(Unit::TB),
-            "kib" => Some(Unit::KiB),
-            "mib" => Some(Unit::MiB),
-            "gib" => Some(Unit::GiB),
-            "tib" => Some(Unit::TiB),
-            _ => None,
+            "b" => Ok(Unit::B),
+            "kb" => Ok(Unit::KB),
+            "mb" => Ok(Unit::MB),
+            "gb" => Ok(Unit::GB),
+            "tb" => Ok(Unit::TB),
+            "kib" => Ok(Unit::KiB),
+            "mib" => Ok(Unit::MiB),
+            "gib" => Ok(Unit::GiB),
+            "tib" => Ok(Unit::TiB),
+            other => Err(FsizeError::InvalidUnit(other.to_string())),
         }
     }
+}
 
+impl Unit {
     const fn divisor(self) -> u64 {
         match self {
             Unit::B => 1,
             Unit::KB => 1000,
-            Unit::MB => 1000_000,
-            Unit::GB => 1000_000_000,
-            Unit::TB => 1000_000_000_000,
+            Unit::MB => 1_000_000,
+            Unit::GB => 1_000_000_000,
+            Unit::TB => 1_000_000_000_000,
             Unit::KiB => 1024,
             Unit::MiB => 1024 * 1024,
             Unit::GiB => 1024 * 1024 * 1024,
@@ -146,18 +201,16 @@ pub fn format_size(bytes: u64, unit: Option<Unit>, binary: bool) -> String {
             } else {
                 Unit::B
             }
+        } else if bytes >= Unit::TB.divisor() {
+            Unit::TB
+        } else if bytes >= Unit::GB.divisor() {
+            Unit::GB
+        } else if bytes >= Unit::MB.divisor() {
+            Unit::MB
+        } else if bytes >= Unit::KB.divisor() {
+            Unit::KB
         } else {
-            if bytes >= Unit::TB.divisor() {
-                Unit::TB
-            } else if bytes >= Unit::GB.divisor() {
-                Unit::GB
-            } else if bytes >= Unit::MB.divisor() {
-                Unit::MB
-            } else if bytes >= Unit::KB.divisor() {
-                Unit::KB
-            } else {
-                Unit::B
-            }
+            Unit::B
         }
     });
 

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use fsize::{compute_total_size, format_mtime, format_size, Color, Unit};
+use fsize::{compute_total_size, format_mtime, format_size, Color, FsizeError, Unit, WalkOutcome};
 
 #[derive(Parser)]
 #[command(
@@ -28,34 +28,47 @@ struct Args {
     #[arg(short = 'i', long = "info")]
     info: bool,
 
+    #[arg(short = 'm', long = "metadata")]
+    metadata: bool,
+
     #[arg(short = 'u', long = "unit", value_name = "UNIT")]
-    in_unit: Option<String>,
+    in_unit: Option<Unit>,
 }
 
 fn main() {
     let args = Args::parse();
 
-    let unit = args.in_unit.as_deref().and_then(Unit::from_str);
-    if args.in_unit.is_some() && unit.is_none() {
-        eprintln!(
-            "{}[ERROR]{} invalid unit `{}`",
-            Color::RED,
-            Color::RESET,
-            args.in_unit.unwrap()
-        );
-        process::exit(1);
-    }
-
     let raw = args.raw || args.byte;
     let mut exit_code = 0;
 
     for path in &args.paths {
-        match compute_total_size(path) {
-            Ok(size) => {
+        let outcome: Result<WalkOutcome, FsizeError> = if args.metadata {
+            fs::symlink_metadata(path)
+                .map(|m| WalkOutcome {
+                    total: m.len(),
+                    warnings: Vec::new(),
+                })
+                .map_err(|e| FsizeError::Io {
+                    path: path.to_owned(),
+                    source: e,
+                })
+        } else {
+            compute_total_size(path)
+        };
+
+        match outcome {
+            Ok(WalkOutcome { total, warnings }) => {
+                for w in &warnings {
+                    eprintln!("{}[WARNING]{} {}", Color::yellow(), Color::reset(), w);
+                }
+                if !warnings.is_empty() {
+                    exit_code = 1;
+                }
+
                 let size_str = if raw {
-                    size.to_string()
+                    total.to_string()
                 } else {
-                    format_size(size, unit, args.binary)
+                    format_size(total, args.in_unit, args.binary)
                 };
 
                 let mut output = size_str;
@@ -65,11 +78,11 @@ fn main() {
                         Ok(meta) => {
                             let ft = meta.file_type();
                             let type_char = if ft.is_dir() {
-                                'd'
+                                'D'
                             } else if ft.is_symlink() {
-                                'l'
+                                'L'
                             } else {
-                                'f' // might be a file
+                                'F'
                             };
                             let mut extra = String::new();
                             extra.push(type_char);
@@ -82,9 +95,9 @@ fn main() {
                         }
                         Err(e) => {
                             eprintln!(
-                                "{}[WARNING]{} cannot read metadata for `{}`: {}",
-                                Color::YELLOW,
-                                Color::RESET,
+                                "{}[WARNING]{} Cannot read metadata for `{}`: {}",
+                                Color::yellow(),
+                                Color::reset(),
                                 path.display(),
                                 e
                             );
@@ -100,7 +113,7 @@ fn main() {
                 }
             }
             Err(e) => {
-                eprintln!("{}[ERROR]{} {}", Color::RED, Color::RESET, e);
+                eprintln!("{}[ERROR]{} {}", Color::red(), Color::reset(), e);
                 exit_code = 1;
             }
         }
