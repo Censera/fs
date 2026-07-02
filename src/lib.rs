@@ -224,7 +224,7 @@ pub fn format_size(bytes: u64, unit: Option<Unit>, binary: bool) -> String {
 }
 
 fn format_pre(num: f64) -> String {
-    let formatted = format!("{:.1$}", num, 3);
+    let formatted = format!("{:.1$}", num, 2);
     formatted
         .trim_end_matches('0')
         .trim_end_matches('.')

@@ -7,7 +7,7 @@ use fsize::{compute_total_size, format_mtime, format_size, Color, FsizeError, Un
 
 #[derive(Parser)]
 #[command(
-    name = "fsize (filesize)",
+    name = "fsize (file/folder size)",
     version,
     about = "Display file/directory sizes",
     arg_required_else_help = true
