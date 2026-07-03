@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use fsize::{compute_total_size, format_mtime, format_size, Color, FsizeError, Unit, WalkOutcome};
+use fsize::{Color, FsizeError, Unit, WalkOutcome, compute_total_size, format_mtime, format_size};
 
 #[derive(Parser)]
 #[command(

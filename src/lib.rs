@@ -20,27 +20,15 @@ pub struct Color;
 
 impl Color {
     pub fn red() -> &'static str {
-        if Self::enabled() {
-            "\x1b[1;31m"
-        } else {
-            ""
-        }
+        if Self::enabled() { "\x1b[1;31m" } else { "" }
     }
 
     pub fn yellow() -> &'static str {
-        if Self::enabled() {
-            "\x1b[33m"
-        } else {
-            ""
-        }
+        if Self::enabled() { "\x1b[33m" } else { "" }
     }
 
     pub fn reset() -> &'static str {
-        if Self::enabled() {
-            "\x1b[0m"
-        } else {
-            ""
-        }
+        if Self::enabled() { "\x1b[0m" } else { "" }
     }
 
     fn enabled() -> bool {
@@ -224,7 +212,8 @@ pub fn format_size(bytes: u64, unit: Option<Unit>, binary: bool) -> String {
 }
 
 fn format_pre(num: f64) -> String {
-    let formatted = format!("{:.1$}", num, 2);
+    let truncated = (num * 100.0).trunc() / 100.0;
+    let formatted = format!("{:.2}", truncated);
     formatted
         .trim_end_matches('0')
         .trim_end_matches('.')

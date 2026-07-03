@@ -17,8 +17,6 @@ TARGETS=(
 for target in "${TARGETS[@]}"; do
     echo "Building $target..."
 
-    rustup target add "$target"
-
     cargo build \
     --release \
     --target "$target"
@@ -37,5 +35,4 @@ for target in "${TARGETS[@]}"; do
             done
 
             echo
-            echo "Artifacts:"
             ls -lh "$OUT"
