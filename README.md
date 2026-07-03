@@ -8,23 +8,23 @@ __How to use it__:
 Options:
 
 ```rust
-    -b, --binary
-    -r, --raw
-    -o, --byte
-    -i, --info
-    -m, --metadata
-    -u, --unit <UNIT>
-    -h, --help         Print help
-    -V, --version      Print version
+-b, --binary
+-r, --raw
+-o, --byte
+-i, --info
+-m, --metadata
+-u, --unit <UNIT>
+-h, --help         Print help
+-V, --version      Print version
 ```
 
 Examples:
 
 ```rust
-    fsize   file.txt                       :   24 KB
-    fsize   -b file.txt                    :   20 KiB
-    fsize   -o file.txt                    :   160000
-    fsize   file.txt -u MiB                :   0.02 MiB
-    fsize   -i file.txt                    :   24 KB f Jun 24 17:32
-    fsize   -i /some/dir                   :   1.2 GB d Jun 24 17:32
+fsize file.txt             | 24 KB
+fsize -b file.txt          | 20 KiB
+fsize -o file.txt          | 160000
+fsize file.txt -u MiB      | 0.02 MiB
+fsize -i file.txt          | 24 KB f Jun 24 17:32
+fsize -i /some/dir         | 1.2 GB d Jun 24 17:32
 ```
