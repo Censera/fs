@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use rayon::prelude::*;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -20,15 +19,27 @@ pub struct Color;
 
 impl Color {
     pub fn red() -> &'static str {
-        if Self::enabled() { "\x1b[1;31m" } else { "" }
+        if Self::enabled() {
+            "\x1b[1;31m"
+        } else {
+            ""
+        }
     }
 
     pub fn yellow() -> &'static str {
-        if Self::enabled() { "\x1b[33m" } else { "" }
+        if Self::enabled() {
+            "\x1b[33m"
+        } else {
+            ""
+        }
     }
 
     pub fn reset() -> &'static str {
-        if Self::enabled() { "\x1b[0m" } else { "" }
+        if Self::enabled() {
+            "\x1b[0m"
+        } else {
+            ""
+        }
     }
 
     fn enabled() -> bool {
@@ -48,7 +59,7 @@ fn is_virtual_fs(_p: &Path) -> bool {
 
 #[derive(Debug, Default)]
 pub struct WalkOutcome {
-    pub total: u64,
+    pub total: u128,
     pub warnings: Vec<String>,
 }
 
@@ -60,7 +71,7 @@ pub fn compute_total_size(path: &Path) -> Result<WalkOutcome, FsizeError> {
 
     if !meta.file_type().is_dir() {
         return Ok(WalkOutcome {
-            total: meta.len(),
+            total: meta.len() as u128,
             warnings: Vec::new(),
         });
     }
@@ -81,7 +92,7 @@ pub fn compute_total_size(path: &Path) -> Result<WalkOutcome, FsizeError> {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    push_warning(format!("walkdir error: {e}"));
+                    push_warning(format!("{e}"));
                     return None;
                 }
             };
@@ -94,18 +105,18 @@ pub fn compute_total_size(path: &Path) -> Result<WalkOutcome, FsizeError> {
             match entry.metadata() {
                 Ok(m) => {
                     if m.is_file() {
-                        Some(m.len())
+                        Some(m.len() as u128)
                     } else {
                         None
                     }
                 }
                 Err(e) => {
-                    push_warning(format!("cannot access `{}`: {e}", p.display()));
-                    None
+                    push_warning(format!("Cannot access `{}`: {e}", p.display()));
+                    return None;
                 }
             }
         })
-        .sum::<u64>();
+        .sum::<u128>();
 
     Ok(WalkOutcome {
         total,
@@ -120,10 +131,22 @@ pub enum Unit {
     MB,
     GB,
     TB,
+    PB,
+    EB,
+    ZB,
+    YB,
+    RB,
+    QB,
     KiB,
     MiB,
     GiB,
     TiB,
+    PiB,
+    EiB,
+    ZiB,
+    YiB,
+    RiB,
+    QiB,
 }
 
 impl std::str::FromStr for Unit {
@@ -136,27 +159,51 @@ impl std::str::FromStr for Unit {
             "mb" => Ok(Unit::MB),
             "gb" => Ok(Unit::GB),
             "tb" => Ok(Unit::TB),
+            "pb" => Ok(Unit::PB),
+            "eb" => Ok(Unit::EB),
+            "zb" => Ok(Unit::ZB),
+            "yb" => Ok(Unit::YB),
+            "rb" => Ok(Unit::RB),
+            "qb" => Ok(Unit::QB),
             "kib" => Ok(Unit::KiB),
             "mib" => Ok(Unit::MiB),
             "gib" => Ok(Unit::GiB),
             "tib" => Ok(Unit::TiB),
+            "pib" => Ok(Unit::PiB),
+            "eib" => Ok(Unit::EiB),
+            "zib" => Ok(Unit::ZiB),
+            "yib" => Ok(Unit::YiB),
+            "rib" => Ok(Unit::RiB),
+            "qib" => Ok(Unit::QiB),
             other => Err(FsizeError::InvalidUnit(other.to_string())),
         }
     }
 }
 
 impl Unit {
-    const fn divisor(self) -> u64 {
+    const fn divisor(self) -> u128 {
         match self {
             Unit::B => 1,
             Unit::KB => 1000,
             Unit::MB => 1_000_000,
             Unit::GB => 1_000_000_000,
             Unit::TB => 1_000_000_000_000,
+            Unit::PB => 1_000_000_000_000_000,
+            Unit::EB => 1_000_000_000_000_000_000,
+            Unit::ZB => 1_000_000_000_000_000_000_000,
+            Unit::YB => 1_000_000_000_000_000_000_000_000,
+            Unit::RB => 1_000_000_000_000_000_000_000_000_000,
+            Unit::QB => 1_000_000_000_000_000_000_000_000_000_000,
             Unit::KiB => 1024,
             Unit::MiB => 1024 * 1024,
             Unit::GiB => 1024 * 1024 * 1024,
             Unit::TiB => 1024 * 1024 * 1024 * 1024,
+            Unit::PiB => 1024 * 1024 * 1024 * 1024 * 1024,
+            Unit::EiB => 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
+            Unit::ZiB => 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
+            Unit::YiB => 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
+            Unit::RiB => 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
+            Unit::QiB => 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
         }
     }
 
@@ -167,18 +214,42 @@ impl Unit {
             Unit::MB => "MB",
             Unit::GB => "GB",
             Unit::TB => "TB",
+            Unit::PB => "PB",
+            Unit::EB => "EB",
+            Unit::ZB => "ZB",
+            Unit::YB => "YB",
+            Unit::RB => "RB",
+            Unit::QB => "QB",
             Unit::KiB => "KiB",
             Unit::MiB => "MiB",
             Unit::GiB => "GiB",
             Unit::TiB => "TiB",
+            Unit::PiB => "PiB",
+            Unit::EiB => "EiB",
+            Unit::ZiB => "ZiB",
+            Unit::YiB => "YiB",
+            Unit::RiB => "RiB",
+            Unit::QiB => "QiB",
         }
     }
 }
 
-pub fn format_size(bytes: u64, unit: Option<Unit>, binary: bool) -> String {
+pub fn format_size(bytes: u128, unit: Option<Unit>, binary: bool) -> String {
     let unit = unit.unwrap_or_else(|| {
         if binary {
-            if bytes >= Unit::TiB.divisor() {
+            if bytes >= Unit::QiB.divisor() {
+                Unit::QiB
+            } else if bytes >= Unit::RiB.divisor() {
+                Unit::RiB
+            } else if bytes >= Unit::YiB.divisor() {
+                Unit::YiB
+            } else if bytes >= Unit::ZiB.divisor() {
+                Unit::ZiB
+            } else if bytes >= Unit::EiB.divisor() {
+                Unit::EiB
+            } else if bytes >= Unit::PiB.divisor() {
+                Unit::PiB
+            } else if bytes >= Unit::TiB.divisor() {
                 Unit::TiB
             } else if bytes >= Unit::GiB.divisor() {
                 Unit::GiB
@@ -189,6 +260,18 @@ pub fn format_size(bytes: u64, unit: Option<Unit>, binary: bool) -> String {
             } else {
                 Unit::B
             }
+        } else if bytes >= Unit::QB.divisor() {
+            Unit::QB
+        } else if bytes >= Unit::RB.divisor() {
+            Unit::RB
+        } else if bytes >= Unit::YB.divisor() {
+            Unit::YB
+        } else if bytes >= Unit::ZB.divisor() {
+            Unit::ZB
+        } else if bytes >= Unit::EB.divisor() {
+            Unit::EB
+        } else if bytes >= Unit::PB.divisor() {
+            Unit::PB
         } else if bytes >= Unit::TB.divisor() {
             Unit::TB
         } else if bytes >= Unit::GB.divisor() {
@@ -220,7 +303,9 @@ fn format_pre(num: f64) -> String {
         .to_string()
 }
 
+use chrono::{DateTime, Utc};
+
 pub fn format_mtime(time: std::time::SystemTime) -> String {
-    let dt: DateTime<Local> = time.into();
-    dt.format("%b %e %H:%M").to_string()
+    let dt: DateTime<Utc> = time.into();
+    dt.format("%b %e %H:%M UTC").to_string()
 }

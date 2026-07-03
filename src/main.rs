@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use fsize::{Color, FsizeError, Unit, WalkOutcome, compute_total_size, format_mtime, format_size};
+use fsize::{compute_total_size, format_mtime, format_size, Color, FsizeError, Unit, WalkOutcome};
 
 #[derive(Parser)]
 #[command(
@@ -45,7 +45,7 @@ fn main() {
         let outcome: Result<WalkOutcome, FsizeError> = if args.metadata {
             fs::symlink_metadata(path)
                 .map(|m| WalkOutcome {
-                    total: m.len(),
+                    total: m.len() as u128,
                     warnings: Vec::new(),
                 })
                 .map_err(|e| FsizeError::Io {
