@@ -9,11 +9,15 @@ Options:
 
 ```rust
 -b, --binary
--r, --raw
--o, --byte
+-r, --raw          or --byte
 -i, --info
 -m, --metadata
+-d, --disk-usage
 -u, --unit <UNIT>
+    --exclude <PATTERN>
+    --max-depth <N>
+-L  --follow-symlinks
+    --json
 -h, --help         Print help
 -V, --version      Print version
 ```
@@ -25,6 +29,6 @@ fsize file.txt             | 24 KB
 fsize -b file.txt          | 20 KiB
 fsize -o file.txt          | 160000
 fsize file.txt -u MiB      | 0.02 MiB
-fsize -i file.txt          | 24 KB f Jun 24 17:32
-fsize -i /some/dir         | 1.2 GB d Jun 24 17:32
+fsize -i file.txt          | 24 KB F Jun 24 17:32 UTC
+fsize -i /some/dir         | 1.2 GB D Jun 24 17:32 UTC
 ```
