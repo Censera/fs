@@ -1,9 +1,11 @@
+use jwalk::WalkDir as JWalkDir;
 use rayon::prelude::*;
+use serde::Serialize;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::{fs, io};
-use walkdir::WalkDir;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FsizeError {
@@ -11,8 +13,17 @@ pub enum FsizeError {
     Io { path: PathBuf, source: io::Error },
     #[error("Invalid unit specification: `{0}`")]
     InvalidUnit(String),
+    #[error("Invalid exclude pattern `{pattern}`: {source}")]
+    InvalidPattern {
+        pattern: String,
+        source: glob::PatternError,
+    },
     #[error("Path does not exist: `{0}`")]
     NotFound(PathBuf),
+    #[error("Path is not valid UTF-8: `{0}`")]
+    InvalidPath(PathBuf),
+    #[error("Disk usage is not supported on this platform: {0}")]
+    Unsupported(String),
 }
 
 pub struct Color;
@@ -43,9 +54,30 @@ impl Color {
     }
 
     fn enabled() -> bool {
+        enable_windows_ansi();
         std::env::var_os("NO_COLOR").is_none() && std::io::stderr().is_terminal()
     }
 }
+
+#[cfg(windows)]
+fn enable_windows_ansi() {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(|| unsafe {
+        use windows_sys::Win32::System::Console::{
+            GetConsoleMode, GetStdHandle, SetConsoleMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+            STD_ERROR_HANDLE,
+        };
+        let handle = GetStdHandle(STD_ERROR_HANDLE);
+        let mut mode: u32 = 0;
+        if GetConsoleMode(handle, &mut mode) != 0 {
+            SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn enable_windows_ansi() {}
 
 #[cfg(unix)]
 fn is_virtual_fs(p: &Path) -> bool {
@@ -57,22 +89,61 @@ fn is_virtual_fs(_p: &Path) -> bool {
     false
 }
 
-#[derive(Debug, Default)]
+pub struct WalkOptions {
+    pub max_depth: Option<usize>,
+    pub excludes: Vec<glob::Pattern>,
+    pub follow_links: bool,
+}
+
+impl Default for WalkOptions {
+    fn default() -> Self {
+        Self {
+            max_depth: None,
+            excludes: Vec::new(),
+            follow_links: false,
+        }
+    }
+}
+
+impl WalkOptions {
+    pub fn compile_excludes(patterns: &[String]) -> Result<Vec<glob::Pattern>, FsizeError> {
+        patterns
+            .iter()
+            .map(|p| {
+                glob::Pattern::new(p).map_err(|source| FsizeError::InvalidPattern {
+                    pattern: p.clone(),
+                    source,
+                })
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Default, Serialize)]
 pub struct WalkOutcome {
     pub total: u128,
     pub warnings: Vec<String>,
+    pub files_scanned: u64,
 }
 
-pub fn compute_total_size(path: &Path) -> Result<WalkOutcome, FsizeError> {
+pub fn compute_total_size(
+    path: &Path,
+    opts: &WalkOptions,
+    progress: Option<&AtomicU64>,
+) -> Result<WalkOutcome, FsizeError> {
     let meta = fs::symlink_metadata(path).map_err(|e| FsizeError::Io {
         path: path.to_owned(),
         source: e,
     })?;
 
     if !meta.file_type().is_dir() {
+        if let Some(c) = progress {
+            c.fetch_add(1, Ordering::Relaxed);
+        }
         return Ok(WalkOutcome {
             total: meta.len() as u128,
             warnings: Vec::new(),
+            files_scanned: 1,
         });
     }
 
@@ -84,8 +155,30 @@ pub fn compute_total_size(path: &Path) -> Result<WalkOutcome, FsizeError> {
             .push(msg);
     };
 
-    let total = WalkDir::new(path)
-        .follow_links(false)
+    let excludes = opts.excludes.clone();
+    let mut walker = JWalkDir::new(path)
+        .follow_links(opts.follow_links)
+        .skip_hidden(false)
+        .process_read_dir(move |_depth, _parent, _state, children| {
+            children.retain(|entry_result| {
+                let Ok(entry) = entry_result else {
+                    return true;
+                };
+                let p = entry.path();
+                if is_virtual_fs(&p) {
+                    return false;
+                }
+                let file_name = entry.file_name().to_string_lossy();
+                !excludes
+                    .iter()
+                    .any(|pat| pat.matches(&file_name) || pat.matches_path(&p))
+            });
+        });
+    if let Some(depth) = opts.max_depth {
+        walker = walker.max_depth(depth);
+    }
+
+    let total = walker
         .into_iter()
         .par_bridge()
         .filter_map(|entry| {
@@ -97,34 +190,134 @@ pub fn compute_total_size(path: &Path) -> Result<WalkOutcome, FsizeError> {
                 }
             };
 
-            let p = entry.path();
-            if is_virtual_fs(p) {
-                return None;
-            }
-
             match entry.metadata() {
                 Ok(m) => {
                     if m.is_file() {
+                        if let Some(c) = progress {
+                            c.fetch_add(1, Ordering::Relaxed);
+                        }
                         Some(m.len() as u128)
                     } else {
                         None
                     }
                 }
                 Err(e) => {
-                    push_warning(format!("Cannot access `{}`: {e}", p.display()));
-                    return None;
+                    push_warning(format!("Cannot access `{}`: {e}", entry.path().display()));
+                    None
                 }
             }
         })
         .sum::<u128>();
 
+    let warnings = warnings.into_inner().unwrap_or_else(|p| p.into_inner());
+    let files_scanned = progress.map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
+
     Ok(WalkOutcome {
         total,
-        warnings: warnings.into_inner().unwrap_or_else(|p| p.into_inner()),
+        warnings,
+        files_scanned,
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct DiskUsageInfo {
+    pub total: u128,
+    pub free: u128,
+    pub available: u128,
+}
+
+impl DiskUsageInfo {
+    pub fn used(&self) -> u128 {
+        self.total.saturating_sub(self.free)
+    }
+
+    pub fn percent_used(&self) -> f64 {
+        if self.total == 0 {
+            0.0
+        } else {
+            (self.used() as f64 / self.total as f64) * 100.0
+        }
+    }
+}
+
+#[cfg(unix)]
+pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, FsizeError> {
+    use std::ffi::CString;
+    use std::mem::MaybeUninit;
+
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| FsizeError::InvalidPath(path.to_owned()))?;
+    let c_path = CString::new(path_str).map_err(|_| FsizeError::InvalidPath(path.to_owned()))?;
+
+    let mut stat = MaybeUninit::<libc::statvfs>::uninit();
+    let rc = unsafe { libc::statvfs(c_path.as_ptr(), stat.as_mut_ptr()) };
+    if rc != 0 {
+        return Err(FsizeError::Io {
+            path: path.to_owned(),
+            source: io::Error::last_os_error(),
+        });
+    }
+    let stat = unsafe { stat.assume_init() };
+
+    let frsize = stat.f_frsize as u128;
+    let total = stat.f_blocks as u128 * frsize;
+    let free = stat.f_bfree as u128 * frsize;
+    let available = stat.f_bavail as u128 * frsize;
+
+    Ok(DiskUsageInfo {
+        total,
+        free,
+        available,
+    })
+}
+
+#[cfg(windows)]
+pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, FsizeError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut free_available: u64 = 0;
+    let mut total_bytes: u64 = 0;
+    let mut total_free: u64 = 0;
+
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free_available,
+            &mut total_bytes,
+            &mut total_free,
+        )
+    };
+
+    if ok == 0 {
+        return Err(FsizeError::Io {
+            path: path.to_owned(),
+            source: io::Error::last_os_error(),
+        });
+    }
+
+    Ok(DiskUsageInfo {
+        total: total_bytes as u128,
+        free: total_free as u128,
+        available: free_available as u128,
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn disk_usage(_path: &Path) -> Result<DiskUsageInfo, FsizeError> {
+    Err(FsizeError::Unsupported(
+        "disk usage queries need statvfs (unix) or GetDiskFreeSpaceExW (windows)".to_string(),
+    ))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum Unit {
     B,
     KB,
@@ -207,7 +400,7 @@ impl Unit {
         }
     }
 
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Unit::B => "B",
             Unit::KB => "KB",
@@ -295,9 +488,7 @@ pub fn format_size(bytes: u128, unit: Option<Unit>, binary: bool) -> String {
 }
 
 fn format_pre(num: f64) -> String {
-    let truncated = (num * 100.0).trunc() / 100.0;
-    let formatted = format!("{:.2}", truncated);
-    formatted
+    format!("{:.2}", num)
         .trim_end_matches('0')
         .trim_end_matches('.')
         .to_string()
