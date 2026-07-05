@@ -40,24 +40,24 @@ alias for the pointer-sized float type), so the package is published as
 `fsize-cli`; the installed binary is still named `fsize`. Confirm the name
 is still free before publishing.
 
-Pre-built binaries are attached to each
-[release](https://github.com/Censera/fsize/releases).
+Pre-built binaries are attached to each [release](https://github.com/Censera/fsize/releases).
 
 ## Usage
 
 ```ts
- -b, --binary             base-2 (1024) units instead of base-10 (1000)
- -r, --raw, --byte        exact byte count, no unit conversion
- -i, --info               entry type (F/D/L) and last-modified time
- -m, --metadata           entry's own size via stat(), no recursive walk
- -d, --disk-usage         mount-level total/used/available for the
+-b, --binary              base-2 (1024) units instead of base-10 (1000)
+-r, --raw, --byte         exact byte count, no unit conversion
+-i, --info                entry type (F/D/L) and last-modified time
+-m, --metadata            entry's own size via stat(), no recursive walk
+-d, --disk-usage          mount-level total/used/available for the
                           filesystem containing PATH
--u, --unit <UNIT>        force a unit, e.g. KB, MiB, GB
-    --exclude <PATTERN>  skip entries matching PATTERN (glob, repeatable)
-    --max-depth <N>      limit recursion to N directories
--L, --follow-symlinks    follow symlinks while walking
-    --json               JSON output
-h,  --help
+-u, --unit <UNIT>         force a unit, e.g. KB, MiB, GB
+    --exclude <PATTERN>   skip entries matching PATTERN (glob, repeatable)
+    --max-depth <N>       limit recursion to N directories
+-L, --follow-symlinks     follow symlinks while walking
+    --json                JSON output
+
+-h, --help
 -V, --version
 ```
 
@@ -110,10 +110,10 @@ GNU du         1.6 MB
 Wall-clock time (real/user/sys):
 
 ```ts
- fsize 0.1.1    6.918s   3.271s   7.617s
- fsize 0.2.0    4.805s   4.874s   7.785s
- diskus         6.816s   7.760s  11.956s
- GNU du         5.641s   1.673s   3.819s
+fsize 0.1.1    6.918s   3.271s   7.617s
+fsize 0.2.0    4.805s   4.874s   7.785s
+diskus         6.816s   7.760s  11.956s
+GNU du         5.641s   1.673s   3.819s
 ```
 
 fsize 0.2.0 has the lowest wall-clock time of the four, including below
@@ -125,10 +125,10 @@ walk across multiple threads.
 Reported size, in bytes:
 
 ```ts
- fsize 0.1.1    77,661,965,054
- fsize 0.2.0    77,662,366,082
- diskus         71,502,820,852
- GNU du         71,502,838,897
+fsize 0.1.1    77,661,965,054
+fsize 0.2.0    77,662,366,082
+diskus         71,502,820,852
+GNU du         71,502,838,897
 ```
 
 fsize reports about 6.16 GB more than diskus and du, consistently across
