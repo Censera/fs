@@ -4,11 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/fsize-cli.svg)](https://crates.io/crates/fsize-cli)
 [![License](https://img.shields.io/crates/l/fsize-cli.svg)](LICENSE)
 
-<<<<<<< HEAD
-fsize computes file and directory sizes from the command line. It walks a path in parallel and sums file sizes, or reports mount-level disk usage (total, used, available) for the filesystem containing a path. Default output is human-readable text. Raw byte and JSON outputs are available for scripts.
-=======
 fsize computes file and directory sizes from the command line. It walks a path in parallel and sums file sizes, or reports mount-level disk usage (total, used, available) for the filesystem containing a path. Default output is nice, readable text. Raw byte and JSON outputs are available for scripts.
->>>>>>> 40786aa02ef3f8aab143bb0d89b1947d178c5f79
 
 The repository is a Cargo workspace containing two crates: `fsize-core` (the size-computation and formatting logic) and `fsize` (the CLI binary built on top of it).
 
@@ -42,20 +38,6 @@ Pre-built binaries are attached to each [release](https://github.com/Censera/fsi
 ## Usage
 
 ```ts
-<<<<<<< HEAD
--b, --binary          base-2 (1024) units instead of base-10 (1000)
--r, --raw, --byte       exact byte count, no unit conversion
--i, --info               entry type (F/D/L) and last-modified time
--m, --metadata           entry's own size via stat(), no recursive walk
--d, --disk-usage         mount-level total/used/available for the
-filesystem containing PATH
--u, --unit <UNIT>        force a unit, e.g. KB, MiB, GB
---exclude <PATTERN>  skip entries matching PATTERN (glob, repeatable)
---max-depth <N>      limit recursion to N directories
--L, --follow-symlinks    follow symlinks while walking
---json               JSON output
-h,  --help
-=======
 -b, --binary              base-2 (1024) units instead of base-10 (1000)
 -r, --raw, --byte         exact byte count, no unit conversion
 -i, --info                entry type (F/D/L) and last-modified time
@@ -68,7 +50,6 @@ h,  --help
 -L, --follow-symlinks     follow symlinks while walking
     --json                JSON output
 -h, --help
->>>>>>> 40786aa02ef3f8aab143bb0d89b1947d178c5f79
 -V, --version
 
 ```
@@ -106,7 +87,6 @@ fsize -d /
 
 ```ts
 fsize --json some-dir/
-
 ```
 
 ## Benchmarks
@@ -133,11 +113,7 @@ GNU du         5.641s   1.673s   3.819s
 
 ```
 
-<<<<<<< HEAD
-The user+sys time for fsize 0.2.0 is 12.7s against a 4.8s wall clock, reflecting parallel directory traversal across multiple threads. GNU du runs single-threaded with a roughly 1:1 ratio.
-=======
 The user + sys time for fsize 0.2.0 is 12.7s against a 4.8s wall clock, reflecting parallel directory traversal across multiple threads. GNU du runs single-threaded with a 1:1 ratio.
->>>>>>> 40786aa02ef3f8aab143bb0d89b1947d178c5f79
 
 Reported size, in bytes:
 
@@ -149,11 +125,7 @@ GNU du         71,502,838,897
 
 ```
 
-<<<<<<< HEAD
-fsize reports approximately 6.16 GB more than diskus and du. du and diskus deduplicate by inode to count hard-linked files once. fsize sums directory entries independently without checking inode identity, causing hard-link double-counting.
-=======
 fsize reports approximately 6.16 GB more than diskus and du. du and diskus deduplicate by inode to count hard linked files once. fsize sums directory entries independently without checking inode identity, causing hardlink double counting.
->>>>>>> 40786aa02ef3f8aab143bb0d89b1947d178c5f79
 
 ## Contributing
 
