@@ -1,14 +1,14 @@
 use clap::Parser;
 use fsize_core::{
-    compute_total_size, disk_usage, format_mtime, format_size, Color, FsizeError, Unit,
-    WalkOptions, WalkOutcome,
+    Color, FsizeError, Unit, WalkOptions, WalkOutcome, compute_total_size, disk_usage,
+    format_mtime, format_size,
 };
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 #[derive(Parser)]

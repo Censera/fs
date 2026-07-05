@@ -3,8 +3,8 @@ use rayon::prelude::*;
 use serde::Serialize;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fs, io};
 
 #[derive(Debug, thiserror::Error)]
@@ -30,27 +30,15 @@ pub struct Color;
 
 impl Color {
     pub fn red() -> &'static str {
-        if Self::enabled() {
-            "\x1b[1;31m"
-        } else {
-            ""
-        }
+        if Self::enabled() { "\x1b[1;31m" } else { "" }
     }
 
     pub fn yellow() -> &'static str {
-        if Self::enabled() {
-            "\x1b[33m"
-        } else {
-            ""
-        }
+        if Self::enabled() { "\x1b[33m" } else { "" }
     }
 
     pub fn reset() -> &'static str {
-        if Self::enabled() {
-            "\x1b[0m"
-        } else {
-            ""
-        }
+        if Self::enabled() { "\x1b[0m" } else { "" }
     }
 
     fn enabled() -> bool {
@@ -65,8 +53,8 @@ fn enable_windows_ansi() {
     static INIT: Once = Once::new();
     INIT.call_once(|| unsafe {
         use windows_sys::Win32::System::Console::{
-            GetConsoleMode, GetStdHandle, SetConsoleMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
-            STD_ERROR_HANDLE,
+            ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle, STD_ERROR_HANDLE,
+            SetConsoleMode,
         };
         let handle = GetStdHandle(STD_ERROR_HANDLE);
         let mut mode: u32 = 0;
