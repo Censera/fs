@@ -89,20 +89,11 @@ fn is_virtual_fs(_p: &Path) -> bool {
     false
 }
 
+#[derive(Default)]
 pub struct WalkOptions {
     pub max_depth: Option<usize>,
     pub excludes: Vec<glob::Pattern>,
     pub follow_links: bool,
-}
-
-impl Default for WalkOptions {
-    fn default() -> Self {
-        Self {
-            max_depth: None,
-            excludes: Vec::new(),
-            follow_links: false,
-        }
-    }
 }
 
 impl WalkOptions {

@@ -4,6 +4,7 @@ use fsize_core::{
     WalkOptions, WalkOutcome,
 };
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -243,7 +244,7 @@ fn main() {
     process::exit(exit_code);
 }
 
-fn run_with_progress(path: &PathBuf, opts: &WalkOptions) -> Result<WalkOutcome, FsizeError> {
+fn run_with_progress(path: &Path, opts: &WalkOptions) -> Result<WalkOutcome, FsizeError> {
     use std::io::IsTerminal;
 
     let counter = Arc::new(AtomicU64::new(0));
