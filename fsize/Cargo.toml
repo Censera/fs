@@ -2,6 +2,7 @@
 name = "fsize-cli"
 version = "0.2.0"
 edition = "2024"
+authors = ["Censera <contact@censera.xyz>"]
 description = "A command-line tool for measuring file and directory size"
 license = "MIT"
 repository = "https://github.com/Censera/fsize"
