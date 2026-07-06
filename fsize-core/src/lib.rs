@@ -90,13 +90,13 @@ fn file_identity(_meta: &fs::Metadata, path: &Path) -> (u64, u64) {
     use std::os::windows::fs::OpenOptionsExt;
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
-        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS,
+        BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, GetFileInformationByHandle,
     };
 
     let file = match OpenOptions::new()
-    .read(true)
-    .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-    .open(path)
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
     {
         Ok(f) => f,
         Err(_) => return (0, 0),
