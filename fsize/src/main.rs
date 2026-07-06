@@ -64,7 +64,7 @@ fn main() {
     let excludes = match WalkOptions::compile_excludes(&args.excludes) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("{}[ERROR]{} {}", Color::red(), Color::reset(), e);
+            eprintln!("{}error{} {}", Color::red(), Color::reset(), e);
             process::exit(2);
         }
     };
@@ -111,7 +111,7 @@ fn main() {
                     }
                 }
                 Err(e) => {
-                    eprintln!("{}[ERROR]{} {}", Color::red(), Color::reset(), e);
+                    eprintln!("{}error{} {}", Color::red(), Color::reset(), e);
                     exit_code = 1;
                 }
             }
@@ -138,7 +138,7 @@ fn main() {
                 total, warnings, ..
             }) => {
                 for w in &warnings {
-                    eprintln!("{}[WARNING]{} {}", Color::yellow(), Color::reset(), w);
+                    eprintln!("{}warining{} {}", Color::yellow(), Color::reset(), w);
                 }
                 if !warnings.is_empty() {
                     exit_code = 1;
@@ -172,7 +172,7 @@ fn main() {
                         }
                         Err(e) => {
                             eprintln!(
-                                "{}[WARNING]{} Cannot read metadata for `{}`: {}",
+                                "{}warining{} Cannot read metadata for `{}`: {}",
                                 Color::yellow(),
                                 Color::reset(),
                                 path.display(),
@@ -211,7 +211,7 @@ fn main() {
                 }
             }
             Err(e) => {
-                eprintln!("{}[ERROR]{} {}", Color::red(), Color::reset(), e);
+                eprintln!("{}error{} {}", Color::red(), Color::reset(), e);
                 exit_code = 1;
             }
         }
@@ -264,7 +264,7 @@ fn run_with_progress(path: &Path, opts: &WalkOptions) -> Result<WalkOutcome, Fsi
                 }
                 if start.elapsed() > Duration::from_millis(300) {
                     eprint!(
-                        "\r{}[SCANNING]{} {} files",
+                        "\r{}scanning{} {} files",
                         Color::yellow(),
                         Color::reset(),
                         counter.load(Ordering::Relaxed)

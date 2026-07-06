@@ -1,10 +1,11 @@
 use jwalk::WalkDir as JWalkDir;
 use rayon::prelude::*;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::{fs, io};
 
 #[derive(Debug, thiserror::Error)]
@@ -77,6 +78,26 @@ fn is_virtual_fs(_p: &Path) -> bool {
     false
 }
 
+#[cfg(unix)]
+fn file_identity(meta: &fs::Metadata) -> (u64, u64) {
+    use std::os::unix::fs::MetadataExt;
+    (meta.dev(), meta.ino())
+}
+
+#[cfg(windows)]
+fn file_identity(meta: &fs::Metadata) -> (u64, u64) {
+    use std::os::windows::fs::MetadataExt;
+    (
+        meta.volume_serial_number().unwrap_or(0) as u64,
+        meta.file_index().unwrap_or(0),
+    )
+}
+
+#[cfg(not(any(unix, windows)))]
+fn file_identity(_meta: &fs::Metadata) -> (u64, u64) {
+    (0, 0)
+}
+
 #[derive(Default)]
 pub struct WalkOptions {
     pub max_depth: Option<usize>,
@@ -126,17 +147,21 @@ pub fn compute_total_size(
         });
     }
 
-    let warnings: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    let push_warning = |msg: String| {
-        warnings
+    let warnings: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    fn push(target: &Mutex<Vec<String>>, msg: String) {
+        target
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push(msg);
-    };
+    }
 
     let excludes = opts.excludes.clone();
+    let follow_links = opts.follow_links;
+    let visited: Arc<Mutex<HashSet<(u64, u64)>>> = Arc::new(Mutex::new(HashSet::new()));
+    let warnings_pr = Arc::clone(&warnings);
+    let visited_pr = Arc::clone(&visited);
     let mut walker = JWalkDir::new(path)
-        .follow_links(opts.follow_links)
+        .follow_links(follow_links)
         .skip_hidden(false)
         .process_read_dir(move |_depth, _parent, _state, children| {
             children.retain(|entry_result| {
@@ -148,9 +173,33 @@ pub fn compute_total_size(
                     return false;
                 }
                 let file_name = entry.file_name().to_string_lossy();
-                !excludes
+                if excludes
                     .iter()
                     .any(|pat| pat.matches(&file_name) || pat.matches_path(&p))
+                {
+                    return false;
+                }
+
+                if follow_links
+                    && let Ok(meta) = fs::metadata(&p)
+                    && meta.is_dir()
+                {
+                    let id = file_identity(&meta);
+                    let mut seen = visited_pr.lock().unwrap_or_else(|p| p.into_inner());
+                    if !seen.insert(id) {
+                        drop(seen);
+                        push(
+                            &warnings_pr,
+                            format!(
+                                "Skipped `{}`: already-visited directory (symlink cycle)",
+                                p.display()
+                            ),
+                        );
+                        return false;
+                    }
+                }
+
+                true
             });
         });
     if let Some(depth) = opts.max_depth {
@@ -164,7 +213,7 @@ pub fn compute_total_size(
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    push_warning(format!("{e}"));
+                    push(&warnings, format!("{e}"));
                     return None;
                 }
             };
@@ -181,14 +230,19 @@ pub fn compute_total_size(
                     }
                 }
                 Err(e) => {
-                    push_warning(format!("Cannot access `{}`: {e}", entry.path().display()));
+                    push(
+                        &warnings,
+                        format!("Cannot access `{}`: {e}", entry.path().display()),
+                    );
                     None
                 }
             }
         })
         .sum::<u128>();
 
-    let warnings = warnings.into_inner().unwrap_or_else(|p| p.into_inner());
+    let warnings = Arc::try_unwrap(warnings)
+        .map(|m| m.into_inner().unwrap_or_else(|p| p.into_inner()))
+        .unwrap_or_else(|arc| arc.lock().unwrap_or_else(|p| p.into_inner()).clone());
     let files_scanned = progress.map(|c| c.load(Ordering::Relaxed)).unwrap_or(0);
 
     Ok(WalkOutcome {
@@ -230,6 +284,7 @@ pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, FsizeError> {
     let c_path = CString::new(path_str).map_err(|_| FsizeError::InvalidPath(path.to_owned()))?;
 
     let mut stat = MaybeUninit::<libc::statvfs>::uninit();
+
     let rc = unsafe { libc::statvfs(c_path.as_ptr(), stat.as_mut_ptr()) };
     if rc != 0 {
         return Err(FsizeError::Io {
@@ -237,6 +292,7 @@ pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, FsizeError> {
             source: io::Error::last_os_error(),
         });
     }
+
     let stat = unsafe { stat.assume_init() };
 
     let frsize = stat.f_frsize as u128;
