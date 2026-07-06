@@ -79,18 +79,38 @@ fn is_virtual_fs(_p: &Path) -> bool {
 }
 
 #[cfg(unix)]
-fn file_identity(meta: &fs::Metadata) -> (u64, u64) {
-    use std::os::unix::fs::MetadataExt;
-    (meta.dev(), meta.ino())
+fn file_identity(_meta: &fs::Metadata, _path: &Path) -> (u64, u64) {
+    (0, 0)
 }
 
 #[cfg(windows)]
-fn file_identity(meta: &fs::Metadata) -> (u64, u64) {
-    use std::os::windows::fs::MetadataExt;
-    (
-        meta.volume_serial_number().unwrap_or(0) as u64,
-        meta.file_index().unwrap_or(0),
-    )
+fn file_identity(_meta: &fs::Metadata, path: &Path) -> (u64, u64) {
+    use std::fs::OpenOptions;
+    use std::mem::zeroed;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS,
+    };
+
+    let file = match OpenOptions::new()
+    .read(true)
+    .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+    .open(path)
+    {
+        Ok(f) => f,
+        Err(_) => return (0, 0),
+    };
+
+    let handle = file.as_raw_handle();
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { zeroed() };
+    let ok = unsafe { GetFileInformationByHandle(handle as _, &mut info) };
+    if ok == 0 {
+        return (0, 0);
+    }
+
+    let file_index = ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64;
+    (info.dwVolumeSerialNumber as u64, file_index)
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -184,7 +204,7 @@ pub fn compute_total_size(
                     && let Ok(meta) = fs::metadata(&p)
                     && meta.is_dir()
                 {
-                    let id = file_identity(&meta);
+                    let id = file_identity(&meta, &p);
                     let mut seen = visited_pr.lock().unwrap_or_else(|p| p.into_inner());
                     if !seen.insert(id) {
                         drop(seen);

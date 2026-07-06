@@ -4,8 +4,8 @@ use fsize_core::{
     format_mtime, format_size,
 };
 use std::fs;
-use std::path::Path;
 use std::path::PathBuf;
+use std::path::Path;
 use std::process;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -21,10 +21,8 @@ use std::time::{Duration, Instant};
 struct Args {
     #[arg(required = true, value_name = "PATH")]
     paths: Vec<PathBuf>,
-
     #[arg(short = 'b', long = "binary", conflicts_with = "raw")]
     binary: bool,
-
     #[arg(short = 'r', long = "raw", visible_alias = "byte")]
     raw: bool,
 
@@ -138,7 +136,7 @@ fn main() {
                 total, warnings, ..
             }) => {
                 for w in &warnings {
-                    eprintln!("{}warining{} {}", Color::yellow(), Color::reset(), w);
+                    eprintln!("{}warning{} {}", Color::yellow(), Color::reset(), w);
                 }
                 if !warnings.is_empty() {
                     exit_code = 1;
@@ -172,7 +170,7 @@ fn main() {
                         }
                         Err(e) => {
                             eprintln!(
-                                "{}warining{} Cannot read metadata for `{}`: {}",
+                                "{}warning{} Cannot read metadata for `{}`: {}",
                                 Color::yellow(),
                                 Color::reset(),
                                 path.display(),
@@ -222,7 +220,7 @@ fn main() {
             serde_json::json!({
                 "entries": json_entries,
                 "total_bytes": grand_total.to_string(),
-                              "total_formatted": if args.raw {
+                "total_formatted": if args.raw {
                                   grand_total.to_string()
                               } else {
                                   format_size(grand_total, args.in_unit, args.binary)
@@ -247,28 +245,49 @@ fn main() {
 fn run_with_progress(path: &Path, opts: &WalkOptions) -> Result<WalkOutcome, FsizeError> {
     use std::io::IsTerminal;
 
+    const SPINNER: [&str; 2] = ["·•", "•·"];
+    const STUCK_AT_ZERO_HINT_AFTER: Duration = Duration::from_secs(2);
+
     let counter = Arc::new(AtomicU64::new(0));
     let done = Arc::new(AtomicBool::new(false));
+    let printed = Arc::new(AtomicBool::new(false));
 
     let show_progress = std::io::stderr().is_terminal();
 
     let progress_thread = if show_progress {
         let counter = Arc::clone(&counter);
         let done = Arc::clone(&done);
+        let printed = Arc::clone(&printed);
         Some(std::thread::spawn(move || {
             let start = Instant::now();
+            let mut frame = 0usize;
             loop {
                 std::thread::sleep(Duration::from_millis(150));
                 if done.load(Ordering::Relaxed) {
                     break;
                 }
                 if start.elapsed() > Duration::from_millis(300) {
+                    let n = counter.load(Ordering::Relaxed);
+                    let elapsed = start.elapsed().as_secs();
+                    let spin = SPINNER[frame % SPINNER.len()];
+                    frame += 1;
+
+                    let hint = if n == 0 && start.elapsed() > STUCK_AT_ZERO_HINT_AFTER {
+                        "(reading directories... Can take a while before the first file turns up)"
+                    } else {
+                        ""
+                    };
+
                     eprint!(
-                        "\r{}scanning{} {} files",
+                        "\r\x1b[2K{}{} scanning{} {} files, {}s {}",
                         Color::yellow(),
+                        spin,
                         Color::reset(),
-                        counter.load(Ordering::Relaxed)
+                        n,
+                        elapsed,
+                        hint,
                     );
+                    printed.store(true, Ordering::Relaxed);
                 }
             }
         }))
@@ -281,8 +300,8 @@ fn run_with_progress(path: &Path, opts: &WalkOptions) -> Result<WalkOutcome, Fsi
     done.store(true, Ordering::Relaxed);
     if let Some(t) = progress_thread {
         let _ = t.join();
-        if counter.load(Ordering::Relaxed) > 0 {
-            eprint!("\r{}\r", " ".repeat(40));
+        if printed.load(Ordering::Relaxed) {
+            eprint!("\r\x1b[2K");
         }
     }
 
