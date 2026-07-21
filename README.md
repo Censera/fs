@@ -32,7 +32,7 @@ nix build
 
 ## Usage
 
-```r
+```ts
 fsize [OPTIONS] [PATH]...
 
 Options:
@@ -58,7 +58,7 @@ Options:
 
 ## Examples
 
-```r
+```ts
 fsize file.txt                   24 KB
 fsize -b file.txt                20 KiB
 fsize -r file.txt                24576
@@ -85,7 +85,7 @@ Measured against GNU `du` and `diskus` on a ~77 GB `/home`, page cache warm. Not
 
 **Binary size (stripped):**
 
-```r
+```ts
 fsize 0.1.1    826.42 KB
 fsize 0.2.0    919.07 KB
 diskus         932.42 KB
@@ -94,7 +94,7 @@ GNU du         1.6 MB
 
 **Wall-clock time (real / user / sys):**
 
-```r
+```ts
 fsize 0.1.1    6.918s   3.271s   7.617s
 fsize 0.2.0    4.805s   4.874s   7.785s
 diskus         6.816s   7.760s  11.956s
