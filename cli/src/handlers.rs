@@ -98,12 +98,11 @@ fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions) -> Result<(), FsizeE
         let name = format!("{name:<width$}");
 
         println!(
-            "{}{}{}{}{}    {}",
+            "{}{}{}{}    {}",
             Color::bold(),
             Color::blue(),
             name,
             Color::reset(),
-            "",
             format(size, args),
         );
     }

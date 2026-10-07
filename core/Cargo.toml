@@ -1,6 +1,6 @@
 [package]
 name = "fsize-core"
-version = "0.2.1"
+version = "1.0.0"
 edition = "2024"
 description = "Core size-computation, formatting, and disk-usage logic for the fsize CLI"
 license = "MIT"
@@ -25,4 +25,3 @@ windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_System_Console"
 ] }
-
