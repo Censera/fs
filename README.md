@@ -3,7 +3,7 @@ Measure file and directory sizes from the command line. Walks paths in parallel 
 ## Install
 
 ```rs
-cargo install fsize-cli
+cargo install fscli
 ```
 
 ## Contributing

@@ -1,4 +1,4 @@
-use fsize_core::{Unit, format_size};
+use fscore::{Unit, format_size};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -17,7 +17,7 @@ impl Temp {
 
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
 
-        let path = std::env::temp_dir().join(format!("fsize-test-{}-{id}", time.as_nanos()));
+        let path = std::env::temp_dir().join(format!("fs-test-{}-{id}", time.as_nanos()));
 
         fs::create_dir(&path).unwrap();
 
@@ -511,7 +511,7 @@ fn help() {
 
     let stdout = out(&result);
 
-    assert!(stdout.contains("fsize"));
+    assert!(stdout.contains("fs"));
     assert!(stdout.contains("Usage:"));
     assert!(stdout.contains("Options:"));
     assert!(stdout.contains("Examples:"));
@@ -525,7 +525,7 @@ fn version() {
 
     let stdout = out(&result);
 
-    assert!(stdout.starts_with("fsize MOLE "));
+    assert!(stdout.starts_with("fs MOLE "));
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use fsize_core::Color;
+use fscore::Color;
 use std::io::{self, Write};
 
 pub enum Value<'a> {

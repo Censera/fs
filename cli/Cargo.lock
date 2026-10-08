@@ -232,7 +232,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fsize-core"
+name = "fscore"
 version = "1.0.0"
 dependencies = [
  "chrono",

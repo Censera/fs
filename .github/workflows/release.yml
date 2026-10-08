@@ -80,7 +80,7 @@ jobs:
       - name: Package Archive (POSIX)
         if: matrix.archive == 'tar.gz'
         run: |
-          staging="fsize-${{ github.ref_name }}-${{ matrix.target }}"
+          staging="fs-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir -p "$staging"
           cp "target/${{ matrix.target }}/release/fs" "$staging/"
           cp README.md "$staging/" 2>/dev/null || true

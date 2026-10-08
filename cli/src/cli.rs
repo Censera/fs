@@ -1,4 +1,4 @@
-use fsize_core::Unit;
+use fscore::Unit;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
@@ -359,9 +359,9 @@ fn validate(args: &Args) {
 fn error(message: &str) -> ! {
     eprint!(
         "{}{}error{}",
-        fsize_core::Color::bold(),
-        fsize_core::Color::red(),
-        fsize_core::Color::reset(),
+        fscore::Color::bold(),
+        fscore::Color::red(),
+        fscore::Color::reset(),
     );
 
     eprintln!(": {message}");
@@ -369,43 +369,43 @@ fn error(message: &str) -> ! {
 }
 
 fn version() -> ! {
-    println!("fsize {VERSION_NAME} {}", env!("CARGO_PKG_VERSION"));
+    println!("fs {VERSION_NAME} {}", env!("CARGO_PKG_VERSION"));
     process::exit(0);
 }
 
 fn help() -> ! {
-    println!("fsize");
+    println!("fs");
     println!("    show file and directory sizes");
     println!();
 
     println!(
         "{}{}Usage:{}",
-        fsize_core::Color::bold(),
-        fsize_core::Color::green(),
-        fsize_core::Color::reset()
+        fscore::Color::bold(),
+        fscore::Color::green(),
+        fscore::Color::reset()
     );
 
     println!(
-        "    fsize [{}OPTIONS{}] [{}PATH{}]...",
-        fsize_core::Color::yellow(),
-        fsize_core::Color::reset(),
-        fsize_core::Color::yellow(),
-        fsize_core::Color::reset(),
+        "    fs [{}OPTIONS{}] [{}PATH{}]...",
+        fscore::Color::yellow(),
+        fscore::Color::reset(),
+        fscore::Color::yellow(),
+        fscore::Color::reset(),
     );
 
     println!(
-        "    fsize {}-d{}",
-        fsize_core::Color::dim(),
-        fsize_core::Color::reset(),
+        "    fs {}-d{}",
+        fscore::Color::dim(),
+        fscore::Color::reset(),
     );
 
     println!();
 
     println!(
         "{}{}Options:{}",
-        fsize_core::Color::bold(),
-        fsize_core::Color::green(),
-        fsize_core::Color::reset()
+        fscore::Color::bold(),
+        fscore::Color::green(),
+        fscore::Color::reset()
     );
 
     option("    -m, --metadata", "Show the size recorded in metadata");
@@ -441,20 +441,20 @@ fn help() -> ! {
 
     println!(
         "{}{}Examples:{}",
-        fsize_core::Color::bold(),
-        fsize_core::Color::green(),
-        fsize_core::Color::reset()
+        fscore::Color::bold(),
+        fscore::Color::green(),
+        fscore::Color::reset()
     );
 
-    example("fsize", "Show entries in the current directory");
+    example("fs", "Show entries in the current directory");
 
-    example("fsize Image/", "Show the total size of Image/");
+    example("fs Image/", "Show the total size of Image/");
 
-    example("fsize image.jpg", "Show the size of image.jpg");
+    example("fs image.jpg", "Show the size of image.jpg");
 
-    example("fsize -m image.jpg", "Show the size recorded in metadata");
+    example("fs -m image.jpg", "Show the size recorded in metadata");
 
-    example("fsize -d", "Show filesystem space");
+    example("fs -d", "Show filesystem space");
 
     process::exit(0);
 }
@@ -463,22 +463,22 @@ fn option(flag: &str, text: &str) {
     println!("{flag}");
     println!(
         "        {}{text}{}",
-        fsize_core::Color::dim(),
-        fsize_core::Color::reset(),
+        fscore::Color::dim(),
+        fscore::Color::reset(),
     );
 }
 
 fn argument(flag: &str, value: &str, text: &str) {
     println!(
         "{flag} {}{value}{}",
-        fsize_core::Color::yellow(),
-        fsize_core::Color::reset(),
+        fscore::Color::yellow(),
+        fscore::Color::reset(),
     );
 
     println!(
         "            {}{text}{}",
-        fsize_core::Color::dim(),
-        fsize_core::Color::reset(),
+        fscore::Color::dim(),
+        fscore::Color::reset(),
     );
 }
 
@@ -486,7 +486,7 @@ fn example(command: &str, text: &str) {
     println!("    {command}");
     println!(
         "        {}{text}{}",
-        fsize_core::Color::dim(),
-        fsize_core::Color::reset(),
+        fscore::Color::dim(),
+        fscore::Color::reset(),
     );
 }
