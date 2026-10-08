@@ -1,11 +1,11 @@
 [package]
-name = "fsize-cli"
+name = "fscli"
 version = "1.0.0"
 edition = "2024"
 authors = ["Censera <Me@Censera.space>"]
 description = "A tool for measuring file and directory size"
 license = "MIT"
-repository = "https://github.com/Censera/fsize"
+repository = "https://github.com/Censera/fs"
 readme = "../README.md"
 
 [[bin]]
@@ -13,5 +13,5 @@ name = "fs"
 path = "src/main.rs"
 
 [dependencies]
-fsize-core = { path = "../core", version = "1.0.0" }
+fscore = { path = "../core", version = "1.0.0" }
 serde_json = "1.0"

@@ -1,5 +1,5 @@
 [package]
-name = "fsize-core"
+name = "fscore"
 version = "1.0.0"
 edition = "2024"
 description = "Core size-computation, formatting, and disk-usage logic for the fsize CLI"
