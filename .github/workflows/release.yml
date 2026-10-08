@@ -71,11 +71,11 @@ jobs:
 
       - name: Build Binary (Native)
         if: ${{ !matrix.use_cross }}
-        run: cargo build --locked --release --target ${{ matrix.target }} --package fsize
+        run: cargo build --locked --release --target ${{ matrix.target }} --package fsize-cli
 
       - name: Build Binary (Cross)
         if: matrix.use_cross
-        run: cross build --locked --release --target ${{ matrix.target }} --package fsize
+        run: cross build --locked --release --target ${{ matrix.target }} --package fsize-cli
 
       - name: Package Archive (POSIX)
         if: matrix.archive == 'tar.gz'

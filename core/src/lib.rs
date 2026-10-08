@@ -176,14 +176,28 @@ fn is_virtual_fs(_path: &Path) -> bool {
 }
 
 #[cfg(unix)]
-fn file_identity(meta: &fs::Metadata, _path: &Path) -> Option<(u64, u64)> {
+fn hardlink_id(meta: &fs::Metadata) -> Option<(u64, u64)> {
     use std::os::unix::fs::MetadataExt;
+
+    (meta.nlink() > 1).then(|| (meta.dev(), meta.ino()))
+}
+
+#[cfg(not(unix))]
+fn hardlink_id(_meta: &fs::Metadata) -> Option<(u64, u64)> {
+    None
+}
+
+#[cfg(unix)]
+fn dir_identity(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+
+    let meta = fs::metadata(path).ok()?;
 
     Some((meta.dev(), meta.ino()))
 }
 
 #[cfg(windows)]
-fn file_identity(_meta: &fs::Metadata, path: &Path) -> Option<(u64, u64)> {
+fn dir_identity(path: &Path) -> Option<(u64, u64)> {
     use std::fs::OpenOptions;
     use std::mem::zeroed;
     use std::os::windows::fs::OpenOptionsExt;
@@ -215,8 +229,18 @@ fn file_identity(_meta: &fs::Metadata, path: &Path) -> Option<(u64, u64)> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn file_identity(_meta: &fs::Metadata, _path: &Path) -> Option<(u64, u64)> {
+fn dir_identity(_path: &Path) -> Option<(u64, u64)> {
     None
+}
+
+fn is_symlink_cycle(path: &Path) -> bool {
+    let Some(target) = dir_identity(path) else {
+        return false;
+    };
+
+    path.ancestors()
+        .skip(1)
+        .any(|ancestor| dir_identity(ancestor) == Some(target))
 }
 
 #[derive(Default)]
@@ -258,8 +282,6 @@ pub struct WalkOutcome {
     pub warnings: Vec<String>,
 }
 
-type Key = ((u64, u64), Option<PathBuf>);
-
 pub fn compute_total_size(
     path: &Path,
     opts: &WalkOptions,
@@ -295,17 +317,9 @@ pub fn compute_total_size(
             .push(message);
     }
 
-    let files = Arc::new(Mutex::new(HashSet::<Key>::new()));
-    let dirs = Arc::new(Mutex::new(HashSet::<Key>::new()));
-
     let excludes = opts.excludes.clone();
     let follow_links = opts.follow_links;
-    let root = path.to_owned();
-
-    let files_pr = Arc::clone(&files);
-    let dirs_pr = Arc::clone(&dirs);
-    let warnings_pr = Arc::clone(&warnings);
-    let warnings_walk = Arc::clone(&warnings);
+    let warnings_filter = Arc::clone(&warnings);
 
     let mut walker = JWalkDir::new(path)
         .follow_links(follow_links)
@@ -318,35 +332,24 @@ pub fn compute_total_size(
 
                 let entry_path = entry.path();
 
-                if is_virtual_fs(&entry_path) {
+                if is_virtual_fs(&entry_path) || excluded(&entry_path, &excludes) {
                     return false;
                 }
 
-                if excluded(&entry_path, &excludes) {
+                if follow_links
+                    && entry.path_is_symlink()
+                    && entry.file_type().is_dir()
+                    && is_symlink_cycle(&entry_path)
+                {
+                    push(
+                        &warnings_filter,
+                        format!(
+                            "Skipped `{}`: already-visited directory (symlink cycle)",
+                            entry_path.display()
+                        ),
+                    );
+
                     return false;
-                }
-
-                if follow_links && entry.file_type().is_dir() {
-                    if let Ok(meta) = fs::metadata(&entry_path) {
-                        if let Some(id) = file_identity(&meta, &entry_path) {
-                            let link = link_root(&entry_path, &root);
-
-                            let mut dirs = dirs_pr
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-                            if !dirs.insert((id, link)) {
-                                push(
-                                    &warnings_walk,
-                                    format!(
-                                        "Skipped `{}`: already-visited directory \
-                                         (symlink cycle)",
-                                        entry_path.display()
-                                    ),
-                                );
-                            }
-                        }
-                    }
                 }
 
                 true
@@ -356,6 +359,8 @@ pub fn compute_total_size(
     if let Some(depth) = opts.max_depth {
         walker = walker.max_depth(depth);
     }
+
+    let hardlinks = Mutex::new(HashSet::<(u64, u64)>::new());
 
     let total = walker
         .into_iter()
@@ -369,7 +374,7 @@ pub fn compute_total_size(
                         let child = error.path().unwrap_or_else(|| Path::new(""));
 
                         push(
-                            &warnings_pr,
+                            &warnings,
                             format!(
                                 "Skipped `{}`: already-visited directory \
                                  (symlink cycle via `{}`)",
@@ -379,11 +384,11 @@ pub fn compute_total_size(
                         );
                     } else if let Some(path) = error.path() {
                         push(
-                            &warnings_pr,
+                            &warnings,
                             format!("Cannot access `{}`: {error}", path.display()),
                         );
                     } else {
-                        push(&warnings_pr, format!("{error}"));
+                        push(&warnings, format!("{error}"));
                     }
 
                     return None;
@@ -392,49 +397,43 @@ pub fn compute_total_size(
 
             if let Some(error) = entry.read_children_error.as_ref() {
                 push(
-                    &warnings_pr,
+                    &warnings,
                     format!("Cannot access `{}`: {error}", entry.path().display()),
                 );
             }
 
-            match entry.metadata() {
-                Ok(meta) => {
-                    let entry_path = entry.path();
-
-                    if !meta.is_file() {
-                        return None;
-                    }
-
-                    if let Some(id) = file_identity(&meta, &entry_path) {
-                        let link = link_root(&entry_path, path);
-
-                        let mut files = files_pr
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-                        if !files.insert((id, link)) {
-                            return None;
-                        }
-                    }
-
-                    if let Some(counter) = progress {
-                        counter.fetch_add(1, Ordering::Relaxed);
-                    }
-
-                    Some(meta.len() as u128)
-                }
+            let meta = match entry.metadata() {
+                Ok(meta) => meta,
 
                 Err(error) => {
-                    let entry_path = entry.path();
-
                     push(
-                        &warnings_pr,
-                        format!("Cannot access `{}`: {error}", entry_path.display()),
+                        &warnings,
+                        format!("Cannot access `{}`: {error}", entry.path().display()),
                     );
 
-                    None
+                    return None;
+                }
+            };
+
+            if !meta.is_file() {
+                return None;
+            }
+
+            if let Some(id) = hardlink_id(&meta) {
+                let mut seen = hardlinks
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+                if !seen.insert(id) {
+                    return None;
                 }
             }
+
+            if let Some(counter) = progress {
+                counter.fetch_add(1, Ordering::Relaxed);
+            }
+
+            Some(meta.len() as u128)
         })
         .sum::<u128>();
 
@@ -451,32 +450,6 @@ pub fn compute_total_size(
         });
 
     Ok(WalkOutcome { total, warnings })
-}
-
-fn link_root(path: &Path, root: &Path) -> Option<PathBuf> {
-    let mut parts = Vec::new();
-    let mut current = path;
-
-    loop {
-        parts.push(current);
-
-        if current == root {
-            break;
-        }
-
-        current = current.parent()?;
-    }
-
-    parts.reverse();
-
-    parts
-        .into_iter()
-        .find(|path| {
-            fs::symlink_metadata(path)
-                .map(|meta| meta.file_type().is_symlink())
-                .unwrap_or(false)
-        })
-        .map(Path::to_owned)
 }
 
 pub fn metadata_size(path: &Path) -> Result<u128, FsizeError> {

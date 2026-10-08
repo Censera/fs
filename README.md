@@ -4,7 +4,7 @@
 
 Measure file and directory sizes from the command line. Walks paths in parallel and reports human-readable sizes by default, with flags for raw bytes, forced units, JSON output, and mount-level disk usage.
 
-The repository is a Cargo workspace: `fsize-core` holds the size-computation and formatting logic; `fsize` is the CLI built on top of it.
+The repository is a Cargo workspace: `core` (`fsize-core`) holds the size-computation and formatting logic; `cli` (`fsize-cli`) is the command-line tool built on top of it.
 
 ## Install
 
@@ -22,35 +22,28 @@ Pre-built binaries for Linux (x86_64, aarch64, armv7, riscv64), macOS, and Windo
 cargo build --release
 ```
 
-**Nix:**
-
-```nix
-nix build
-```
-
-**Arch Linux:** a `PKGBUILD` is included in the repository root.
-
 ## Usage
 
 ```ts
 fsize [OPTIONS] [PATH]...
 
 Options:
-  -b, --binary            Base-2 (1024) units instead of base-10 (1000)
-  -r, --raw, --byte       Exact byte count, no unit conversion
-  -i, --info              Entry type (F/D/L) and last-modified time
+      --binary            Base-2 (1024) units instead of base-10 (1000)
+  -r, -b, --raw, --byte   Exact byte count, no unit conversion
   -m, --metadata          Entry's own size via stat(), no recursive walk
-  -d, --disk-usage        Mount-level total/used/available for the filesystem containing PATH
+  -d, --disk-usage        Mount-level total/used/free/available of the root filesystem
   -u, --unit <UNIT>       Force a unit: KB, MiB, GB, etc.
       --exclude <PATTERN> Skip entries matching PATTERN (glob, repeatable)
       --max-depth <N>     Limit directory recursion to N levels
   -L, --follow-symlinks   Follow symlinks while walking
-      --json              JSON output
+      --json[=fmt]        JSON output; =fmt is indented and color-coded
   -h, --help
   -V, --version
 ```
 
-`--raw` and `--unit`/`--binary` are mutually exclusive, as are `--metadata` and `--disk-usage`.
+`-b` is the same flag as `-r`; passing both is an error ("same same"). `--raw` and `--unit`/`--binary` are mutually exclusive, and `--disk-usage` only combines with `--json`.
+
+With several paths (or when listing the current directory), each entry is printed as soon as it has been measured, followed by a `total` row. `--json` streams the same way: one entry per measurement, then the totals.
 
 ## What `-m` and `-d` do
 
@@ -60,24 +53,25 @@ Options:
 
 ```ts
 fsize file.txt                   24 KB
-fsize -b file.txt                20 KiB
+fsize --binary file.txt          24 KiB
 fsize -r file.txt                24576
+fsize -b file.txt                24576
 fsize -u MiB file.txt            0.02 MiB
-fsize -i file.txt                24 KB  F  Jun 24 17:32 UTC
-fsize -i some-dir/               1.2 GB D  Jun 24 17:32 UTC
 
 fsize file1.txt file2.txt
-12 B      file1.txt
-50 KB     file2.txt
-50.01 KB  total
+file1.txt    12 B
+file2.txt    50 KB
+total        50.01 KB
 
 fsize --exclude 'target' --max-depth 3 .
 
-fsize -d /
-/   total 512.00 GB   used 210.34 GB   available 301.66 GB   (41.1% used)
+fsize -d
 
 fsize --json some-dir/
+fsize --json=fmt some-dir/
 ```
+
+`--json` prints a compact object per path (`{"path","bytes","formatted"}`), or `{"entries":[...],"total_bytes","total_formatted"}` for several. Byte counts are strings so they survive values above 2^53. `--json=fmt` is the same data, indented and color-coded; colors follow `NO_COLOR` / `FORCE_COLOR` and are off when the output is not a terminal.
 
 ## Benchmarks
 
@@ -103,7 +97,9 @@ GNU du         5.641s   1.673s   3.819s
 
 fsize 0.2.0 has the lowest wall-clock time of the four. The high user+sys total relative to wall clock is consistent with parallel directory walking across multiple threads.
 
-fsize reports ~6.16 GB more than `du` and `diskus` on the same tree. The likely cause is hardlink double-counting: `du` and `diskus` deduplicate by inode; fsize sums every directory entry without checking inode identity. This needs verification against a directory with known hardlinks before the byte counts can be trusted over `du`.
+These numbers were measured on 0.1.1 and 0.2.0, before the 1.0 rewrite, and have not been re-run.
+
+At the time fsize reported ~6.16 GB more than `du` and `diskus` on the same tree, attributed to hardlinks being counted once per directory entry. Hardlinked files are now counted once, by inode (Unix only; on Windows every directory entry is counted). The gap was not re-measured on the original tree.
 
 ## Contributing
 

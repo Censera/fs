@@ -9,7 +9,6 @@ license = "MIT"
 path = "src/lib.rs"
 
 [dependencies]
-chrono = "0.4"
 thiserror = "2.0"
 jwalk = "0.8"
 rayon = "1.10"

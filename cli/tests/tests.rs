@@ -36,7 +36,23 @@ fn file(path: &Path, size: usize) {
 }
 
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_fsize"))
+    Command::new(env!("CARGO_BIN_EXE_fs"))
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+fn run_in(dir: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_fs"))
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+fn run_env(args: &[&str], key: &str, value: &str) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_fs"))
+        .env(key, value)
         .args(args)
         .output()
         .unwrap()
@@ -158,8 +174,9 @@ fn symlinks_lflag() {
 
     let result = run(&["--raw", "-L", tmp.path.to_str().unwrap()]);
 
+    // 100 (file) + 200 (a/one) + 300 (b/two) + 100 (a/link -> ../file, followed)
     assert!(result.status.success());
-    assert_eq!(out(&result), "900\n");
+    assert_eq!(out(&result), "700\n");
 }
 
 #[cfg(unix)]
@@ -200,7 +217,7 @@ fn symlinks_cycles() {
 
     assert!(result.status.success());
     assert_eq!(out(&result), "300\n");
-    assert!(err(&result).contains("already-visited"));
+    assert_eq!(err(&result).matches("already-visited").count(), 1);
 }
 
 #[cfg(unix)]
@@ -287,11 +304,13 @@ fn multiple_paths() {
     let stdout = out(&result);
     let lines: Vec<_> = stdout.lines().collect();
 
-    assert_eq!(lines.len(), 2);
+    assert_eq!(lines.len(), 3, "{stdout}");
     assert!(lines[0].contains("a"));
     assert!(lines[0].contains("10"));
     assert!(lines[1].contains("b"));
     assert!(lines[1].contains("20"));
+    assert!(lines[2].starts_with("total"));
+    assert!(lines[2].ends_with("30"));
 }
 
 #[test]
@@ -601,4 +620,313 @@ fn unit_formatting() {
     assert_eq!(format_size(1_000_000, Some(Unit::MB), false), "1 MB");
 
     assert_eq!(format_size(1_048_576, Some(Unit::MiB), false), "1 MiB");
+}
+
+#[test]
+fn unit_scales() {
+    let decimal = ["KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB", "RB", "QB"];
+    let binary = [
+        "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB", "RiB", "QiB",
+    ];
+
+    for (index, name) in decimal.iter().enumerate() {
+        let bytes = 1000u128.pow(index as u32 + 1);
+
+        assert_eq!(format_size(bytes, None, false), format!("1 {name}"));
+        assert!(!format_size(bytes - 1, None, false).contains(name));
+    }
+
+    for (index, name) in binary.iter().enumerate() {
+        let bytes = 1024u128.pow(index as u32 + 1);
+
+        assert_eq!(format_size(bytes, None, true), format!("1 {name}"));
+        assert!(!format_size(bytes - 1, None, true).contains(name));
+    }
+}
+
+#[test]
+fn json_is_the_same_shape_for_one_path_and_many() {
+    let tmp = Temp::new();
+    let a = tmp.path.join("a");
+    let b = tmp.path.join("b");
+
+    file(&a, 10);
+    file(&b, 20);
+
+    let one = run(&["--json", a.to_str().unwrap()]);
+    let many = run(&["--json", a.to_str().unwrap(), b.to_str().unwrap()]);
+
+    let one: serde_json::Value = serde_json::from_slice(&one.stdout).unwrap();
+    let many: serde_json::Value = serde_json::from_slice(&many.stdout).unwrap();
+
+    assert_eq!(one["bytes"], "10");
+    assert_eq!(many["entries"][0], one);
+    assert_eq!(many["entries"][1]["bytes"], "20");
+    assert_eq!(many["total_bytes"], "30");
+}
+
+#[test]
+fn bad_path_does_not_hide_good_ones() {
+    let tmp = Temp::new();
+    let good = tmp.path.join("good");
+    let missing = tmp.path.join("missing");
+
+    file(&good, 10);
+
+    let result = run(&["--raw", good.to_str().unwrap(), missing.to_str().unwrap()]);
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(out(&result).contains("good"), "{}", out(&result));
+    assert!(err(&result).contains("missing"));
+}
+
+#[test]
+fn listing_current_directory() {
+    let tmp = Temp::new();
+
+    file(&tmp.path.join("a"), 10);
+
+    let sub = tmp.path.join("sub");
+    fs::create_dir(&sub).unwrap();
+    file(&sub.join("c"), 20);
+
+    let result = run_in(&tmp.path, &["--raw"]);
+
+    assert!(result.status.success());
+
+    let stdout = out(&result);
+    let lines: Vec<_> = stdout.lines().collect();
+
+    assert_eq!(lines.len(), 3, "{stdout}");
+    assert!(lines[0].starts_with("a ") && lines[0].ends_with("10"));
+    assert!(lines[1].starts_with("sub/") && lines[1].ends_with("20"));
+    assert!(lines[2].starts_with("total") && lines[2].ends_with("30"));
+}
+
+#[cfg(unix)]
+#[test]
+fn hardlinks_across_directories_count_once() {
+    use std::fs::hard_link;
+
+    let tmp = Temp::new();
+
+    let a = tmp.path.join("a");
+    let b = tmp.path.join("b");
+
+    fs::create_dir(&a).unwrap();
+    fs::create_dir(&b).unwrap();
+
+    file(&a.join("x"), 1000);
+    hard_link(a.join("x"), b.join("y")).unwrap();
+    file(&b.join("z"), 500);
+
+    let result = run(&["--raw", tmp.path.to_str().unwrap()]);
+
+    assert_eq!(out(&result), "1500\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_directory_that_is_not_a_cycle_is_followed() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = Temp::new();
+
+    let real = tmp.path.join("real");
+    let other = tmp.path.join("other");
+
+    fs::create_dir(&real).unwrap();
+    fs::create_dir(&other).unwrap();
+
+    file(&real.join("f"), 100);
+    symlink(&real, other.join("link")).unwrap();
+
+    let result = run(&["--raw", "-L", other.to_str().unwrap()]);
+
+    assert!(result.status.success(), "{}", err(&result));
+    assert_eq!(out(&result), "100\n");
+}
+
+#[test]
+fn total_is_blue_and_not_bold() {
+    let tmp = Temp::new();
+    let a = tmp.path.join("a");
+    let b = tmp.path.join("b");
+
+    file(&a, 10);
+    file(&b, 20);
+
+    let result = run_env(
+        &["--raw", a.to_str().unwrap(), b.to_str().unwrap()],
+        "FORCE_COLOR",
+        "1",
+    );
+
+    let stdout = out(&result);
+    let lines: Vec<_> = stdout.lines().collect();
+
+    assert!(lines[0].starts_with("\x1b[1m\x1b[34m"), "{stdout:?}");
+
+    assert!(lines[2].starts_with("\x1b[34mtotal"), "{stdout:?}");
+    assert!(!lines[2].contains("\x1b[1m"), "{stdout:?}");
+}
+
+#[test]
+fn b_is_r() {
+    let tmp = Temp::new();
+    let path = tmp.path.join("file");
+
+    file(&path, 1234);
+
+    let path = path.to_str().unwrap();
+
+    for flag in ["-r", "--raw", "--byte", "-b"] {
+        let result = run(&[flag, path]);
+
+        assert!(result.status.success(), "{flag}");
+        assert_eq!(out(&result), "1234\n", "{flag}");
+    }
+
+    for args in [
+        vec!["-br"],
+        vec!["-rb"],
+        vec!["-b", "--raw"],
+        vec!["--byte", "-b"],
+    ] {
+        let result = run(&args);
+
+        assert!(!result.status.success(), "{args:?}");
+        assert!(err(&result).contains("same same"), "{args:?}");
+    }
+
+    let result = run(&["-b", "-u", "KB", path]);
+
+    assert!(err(&result).contains("raw bytes or only bytes"));
+}
+
+#[test]
+fn binary_units_are_still_available_by_name() {
+    let tmp = Temp::new();
+    let path = tmp.path.join("file");
+
+    file(&path, 2048);
+
+    let result = run(&["--binary", path.to_str().unwrap()]);
+
+    assert_eq!(out(&result), "2 KiB\n");
+}
+
+#[test]
+fn json_fmt_is_the_same_data_indented() {
+    let tmp = Temp::new();
+    let a = tmp.path.join("a");
+    let b = tmp.path.join("b");
+
+    file(&a, 10);
+    file(&b, 20);
+
+    let args = [a.to_str().unwrap(), b.to_str().unwrap()];
+
+    let compact = run(&["--json", args[0], args[1]]);
+    let fmt = run(&["--json=fmt", args[0], args[1]]);
+
+    assert!(fmt.status.success());
+
+    let compact_text = out(&compact);
+    let fmt_text = out(&fmt);
+
+    assert_eq!(compact_text.lines().count(), 1);
+    assert!(fmt_text.lines().count() > 10, "{fmt_text}");
+    assert!(fmt_text.contains("\n  \"entries\": ["), "{fmt_text}");
+    assert!(fmt_text.contains("\n      \"path\": "), "{fmt_text}");
+
+    assert!(!fmt_text.contains('\x1b'));
+
+    let compact: serde_json::Value = serde_json::from_str(&compact_text).unwrap();
+    let fmt: serde_json::Value = serde_json::from_str(&fmt_text).unwrap();
+
+    assert_eq!(compact, fmt);
+}
+
+#[test]
+fn json_fmt_is_color_coded() {
+    let tmp = Temp::new();
+    let path = tmp.path.join("file");
+
+    file(&path, 10);
+
+    let result = run_env(&["--json=fmt", path.to_str().unwrap()], "FORCE_COLOR", "1");
+
+    let stdout = out(&result);
+
+    assert!(stdout.contains("\x1b[34m\"bytes\"\x1b[0m"), "{stdout:?}");
+    assert!(stdout.contains("\x1b[32m\"10\"\x1b[0m"), "{stdout:?}");
+
+    let result = run_env(&["--json", path.to_str().unwrap()], "FORCE_COLOR", "1");
+
+    assert!(!out(&result).contains('\x1b'));
+}
+
+#[test]
+fn json_fmt_single_and_disk() {
+    let tmp = Temp::new();
+    let path = tmp.path.join("file");
+
+    file(&path, 10);
+
+    let result = run(&["--json=fmt", path.to_str().unwrap()]);
+    let json: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+
+    assert_eq!(json["bytes"], "10");
+    assert!(out(&result).starts_with("{\n  \"path\""));
+
+    #[cfg(unix)]
+    {
+        let result = run(&["-d", "--json=fmt"]);
+        let json: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+
+        assert!(json["percent_used"].is_number());
+        assert!(json["total"].is_string());
+    }
+}
+
+#[test]
+fn json_rejects_other_values() {
+    let result = run(&["--json=pretty", "."]);
+
+    assert!(!result.status.success());
+    assert!(err(&result).contains("fmt"));
+}
+
+#[test]
+fn json_stays_valid_when_a_path_fails() {
+    let tmp = Temp::new();
+    let good = tmp.path.join("good");
+    let missing = tmp.path.join("missing");
+
+    file(&good, 10);
+
+    for flag in ["--json", "--json=fmt"] {
+        let result = run(&[flag, good.to_str().unwrap(), missing.to_str().unwrap()]);
+
+        assert_eq!(result.status.code(), Some(1));
+
+        let json: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+
+        assert_eq!(json["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(json["total_bytes"], "10");
+    }
+}
+
+#[test]
+fn json_listing_of_an_empty_directory_is_valid() {
+    let tmp = Temp::new();
+
+    for flag in ["--json", "--json=fmt"] {
+        let result = run_in(&tmp.path, &[flag]);
+        let json: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+
+        assert_eq!(json["entries"].as_array().unwrap().len(), 0);
+        assert_eq!(json["total_bytes"], "0");
+    }
 }

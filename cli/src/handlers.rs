@@ -1,4 +1,8 @@
-use crate::{cli::Args, measure};
+use crate::{
+    cli::Args,
+    json::{Json, Value},
+    measure,
+};
 
 use fsize_core::{Color, FsizeError, WalkOptions, format_size};
 
@@ -7,54 +11,57 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 pub fn run(args: Args) {
-    if let Err(error) = handle(args) {
-        eprintln!(
-            "{}{}error{}: {}",
-            Color::bold(),
-            Color::red(),
-            Color::reset(),
-            error
-        );
+    match handle(args) {
+        Ok(true) => {}
+        Ok(false) => process::exit(1),
+        Err(error) => {
+            report(&error);
 
-        process::exit(1);
+            process::exit(1);
+        }
     }
 }
 
-fn handle(args: Args) -> Result<(), FsizeError> {
+fn report(error: &FsizeError) {
+    eprintln!(
+        "{}{}error{}: {}",
+        Color::bold(),
+        Color::red(),
+        Color::reset(),
+        error
+    );
+}
+
+/// Ok(false): the run finished, but at least one path failed (already reported).
+fn handle(args: Args) -> Result<bool, FsizeError> {
     if args.disk_usage {
-        return disk(&args);
+        disk(&args)?;
+
+        return Ok(true);
     }
 
     let opts = measure::opts(&args.excludes, args.max_depth, args.follow_symlinks)?;
 
     if args.paths.is_empty() {
         let paths = measure::entries(Path::new("."), &opts)?;
-        list(&paths, &args, &opts)?;
+
+        list(&paths, &args, &opts)
     } else if args.paths.len() == 1 {
         single(&args.paths[0], &args, &opts)?;
-    } else {
-        list(&args.paths, &args, &opts)?;
-    }
 
-    Ok(())
+        Ok(true)
+    } else {
+        list(&args.paths, &args, &opts)
+    }
 }
 
 fn single(path: &Path, args: &Args, opts: &WalkOptions) -> Result<(), FsizeError> {
     let size = size(path, args, opts)?;
 
     if args.json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "path": path,
-                "bytes": size,
-                "formatted": format_size(
-                    size,
-                    args.in_unit,
-                    args.binary,
-                ),
-            })
-        );
+        entry_json(path, size, args, |fields| {
+            Json::new(args.json_fmt).print(fields)
+        });
 
         return Ok(());
     }
@@ -64,33 +71,50 @@ fn single(path: &Path, args: &Args, opts: &WalkOptions) -> Result<(), FsizeError
     Ok(())
 }
 
-fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions) -> Result<(), FsizeError> {
-    let names = paths
-        .iter()
-        .map(|path| name(path))
-        .collect::<Result<Vec<_>, _>>()?;
+/// Builds the fields of one entity and hands them to `write`.
+fn entry_json(path: &Path, size: u128, args: &Args, write: impl FnOnce(&[(&str, Value)])) {
+    let shown = path.display().to_string();
+    let bytes = size.to_string();
+    let formatted = format_size(size, args.in_unit, args.binary);
+
+    write(&[
+        ("path", Value::Str(&shown)),
+        ("bytes", Value::Str(&bytes)),
+        ("formatted", Value::Str(&formatted)),
+    ]);
+}
+
+fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions) -> Result<bool, FsizeError> {
+    let names = paths.iter().map(|path| name(path)).collect::<Vec<_>>();
+
+    let show_total = paths.len() > 1;
 
     let width = names
         .iter()
         .map(|name| name.chars().count())
+        .chain(show_total.then_some("total".len()))
         .max()
         .unwrap_or(0);
 
-    let mut entries = Vec::with_capacity(paths.len());
+    let mut json = args.json.then(|| Json::new(args.json_fmt).list());
+    let mut total = 0u128;
+    let mut clean = true;
 
     for (path, name) in paths.iter().zip(names.iter()) {
-        let size = size(path, args, opts)?;
+        let size = match size(path, args, opts) {
+            Ok(size) => size,
+            Err(error) => {
+                report(&error);
+                clean = false;
 
-        if args.json {
-            entries.push(serde_json::json!({
-                "path": path,
-                "bytes": size.to_string(),
-                "formatted": format_size(
-                    size,
-                    args.in_unit,
-                    args.binary,
-                ),
-            }));
+                continue;
+            }
+        };
+
+        total += size;
+
+        if let Some(list) = json.as_mut() {
+            entry_json(path, size, args, |fields| list.entry(fields));
 
             continue;
         }
@@ -107,16 +131,25 @@ fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions) -> Result<(), FsizeE
         );
     }
 
-    if args.json {
+    if let Some(list) = json {
+        let bytes = total.to_string();
+        let formatted = format_size(total, args.in_unit, args.binary);
+
+        list.finish(&[
+            ("total_bytes", Value::Str(&bytes)),
+            ("total_formatted", Value::Str(&formatted)),
+        ]);
+    } else if show_total {
         println!(
-            "{}",
-            serde_json::json!({
-                "entries": entries,
-            })
+            "{}{:<width$}{}    {}",
+            Color::blue(),
+            "total",
+            Color::reset(),
+            format(total, args),
         );
     }
 
-    Ok(())
+    Ok(clean)
 }
 
 fn size(path: &Path, args: &Args, opts: &WalkOptions) -> Result<u128, FsizeError> {
@@ -147,22 +180,21 @@ fn format(size: u128, args: &Args) -> String {
     }
 }
 
-fn name(path: &Path) -> Result<String, FsizeError> {
+fn name(path: &Path) -> String {
     let mut name = path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string());
 
-    let meta = fs::symlink_metadata(path).map_err(|source| FsizeError::Io {
-        path: path.to_owned(),
-        source,
-    })?;
+    let is_dir = fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_dir())
+        .unwrap_or(false);
 
-    if meta.file_type().is_dir() {
+    if is_dir {
         name.push('/');
     }
 
-    Ok(trim(&name))
+    trim(&name)
 }
 
 fn trim(name: &str) -> String {
@@ -180,7 +212,7 @@ fn trim(name: &str) -> String {
 
 fn disk(args: &Args) -> Result<(), FsizeError> {
     #[cfg(unix)]
-    let path = Path::new("/");
+    let path = PathBuf::from("/");
 
     #[cfg(windows)]
     let path = {
@@ -189,19 +221,22 @@ fn disk(args: &Args) -> Result<(), FsizeError> {
         PathBuf::from(drive).join("\\")
     };
 
-    let info = measure::disk(path)?;
+    let info = measure::disk(&path)?;
 
     if args.json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "total": info.total.to_string(),
-                "used": info.used().to_string(),
-                "free": info.free.to_string(),
-                "available": info.available.to_string(),
-                "percent_used": info.percent_used(),
-            })
-        );
+        let total = info.total.to_string();
+        let used = info.used().to_string();
+        let free = info.free.to_string();
+        let available = info.available.to_string();
+        let percent = serde_json::to_string(&info.percent_used()).unwrap_or_else(|_| "null".into());
+
+        Json::new(args.json_fmt).print(&[
+            ("total", Value::Str(&total)),
+            ("used", Value::Str(&used)),
+            ("free", Value::Str(&free)),
+            ("available", Value::Str(&available)),
+            ("percent_used", Value::Num(percent)),
+        ]);
 
         return Ok(());
     }
@@ -217,27 +252,13 @@ fn disk(args: &Args) -> Result<(), FsizeError> {
         ""
     };
 
-    label("total", format(info.total, args));
-    label_color("used", format(used, args), color);
-    label("free", format(info.free, args));
-    label("available", format(info.available, args));
-    label_color("used", format!("{percent:.1}%",), color);
+    label_color("used      ", format(used, args), color);
+    label("available ", format(info.available, args));
+    label("free      ", format(info.free, args));
+    label("total     ", format(info.total, args));
+    label_color("used      ", format!("{percent:.1}%",), color);
 
     Ok(())
-}
-
-fn label(name: &str, value: String) {
-    println!(
-        "{}{}{}    {}",
-        Color::bold(),
-        Color::green(),
-        name,
-        Color::reset(),
-    );
-
-    print!("{}\r", value);
-
-    println!();
 }
 
 fn label_color(name: &str, value: String, color: &str) {
@@ -249,5 +270,16 @@ fn label_color(name: &str, value: String, color: &str) {
         color,
         value,
         Color::reset(),
+    );
+}
+
+fn label(name: &str, value: String) {
+    println!(
+        "{}{}{}{}    {}",
+        Color::bold(),
+        Color::green(),
+        name,
+        Color::reset(),
+        value,
     );
 }

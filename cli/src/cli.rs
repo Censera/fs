@@ -16,8 +16,10 @@ pub struct Args {
     pub max_depth: Option<usize>,
     pub binary: bool,
     pub raw: bool,
+    pub b_flag: bool,
     pub in_unit: Option<Unit>,
     pub json: bool,
+    pub json_fmt: bool,
 }
 
 pub fn parse() -> Args {
@@ -30,8 +32,10 @@ pub fn parse() -> Args {
         max_depth: None,
         binary: false,
         raw: false,
+        b_flag: false,
         in_unit: None,
         json: false,
+        json_fmt: false,
     };
 
     let mut iter = env::args_os().skip(1);
@@ -63,6 +67,9 @@ pub fn parse() -> Args {
     }
 
     validate(&args);
+
+    args.raw |= args.b_flag;
+
     args
 }
 
@@ -120,7 +127,14 @@ fn long(arg: &str, iter: &mut impl Iterator<Item = OsString>, args: &mut Args) {
         }
 
         "--json" => {
-            no_value(name, attached);
+            match attached {
+                None => {}
+                Some("fmt") => args.json_fmt = true,
+                Some(value) => error(&format!(
+                    "invalid value for `--json`: `{value}` (only `fmt` is accepted)"
+                )),
+            }
+
             args.json = true;
         }
 
@@ -183,7 +197,7 @@ fn short(arg: &str, iter: &mut impl Iterator<Item = OsString>, args: &mut Args) 
 
             'b' => {
                 check_disk(args, "-b");
-                args.binary = true;
+                args.b_flag = true;
             }
 
             'r' => {
@@ -240,7 +254,7 @@ fn set_disk(args: &mut Args, attached: Option<&str>) {
         error("`--disk-usage` cannot be used with `--binary`");
     }
 
-    if args.raw {
+    if args.raw || args.b_flag {
         error("`--disk-usage` cannot be used with `--raw`");
     }
 
@@ -311,15 +325,21 @@ fn unit(option: &str, value: &str) -> Unit {
 }
 
 fn validate(args: &Args) {
-    if args.binary && args.raw {
+    if args.b_flag && args.raw {
         error("same same");
     }
 
-    if args.binary && args.in_unit.is_some() {
-        error("options `-b` and `-u`, pick one");
+    let raw = args.raw || args.b_flag;
+
+    if args.binary && raw {
+        error("options `--binary` and `-r` cannot be used together");
     }
 
-    if args.raw && args.in_unit.is_some() {
+    if args.binary && args.in_unit.is_some() {
+        error("options `--binary` and `-u`, pick one");
+    }
+
+    if raw && args.in_unit.is_some() {
         error("do you want raw bytes or only bytes?");
     }
 
@@ -394,9 +414,9 @@ fn help() -> ! {
 
     option("    -L, --follow-symlinks", "Follow symbolic links");
 
-    option("    -b, --binary", "Use binary units");
+    option("    --binary", "Use binary units");
 
-    option("    -r, --raw, --byte", "Show bytes without formatting");
+    option("    -r, -b, --raw, --byte", "Show bytes without formatting");
 
     argument("    -u, --unit", "UNIT", "Use a specific unit");
 
@@ -408,7 +428,10 @@ fn help() -> ! {
 
     argument("    --max-depth", "N", "Limit directory traversal depth");
 
-    option("    --json", "Output JSON");
+    option(
+        "    --json[=fmt]",
+        "Output JSON (fmt: indented and colored)",
+    );
 
     option("    -h, --help", "Show this help");
 
