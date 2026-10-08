@@ -82,7 +82,7 @@ jobs:
         run: |
           staging="fsize-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir -p "$staging"
-          cp "target/${{ matrix.target }}/release/fsize" "$staging/"
+          cp "target/${{ matrix.target }}/release/fs" "$staging/"
           cp README.md "$staging/" 2>/dev/null || true
           cp LICENSE "$staging/" 2>/dev/null || true
           tar czf "$staging.tar.gz" "$staging"
@@ -94,7 +94,7 @@ jobs:
         run: |
           $staging = "fsize-${{ github.ref_name }}-${{ matrix.target }}"
           New-Item -ItemType Directory -Path $staging -Force | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/fsize.exe" -Destination $staging
+          Copy-Item "target/${{ matrix.target }}/release/fs.exe" -Destination $staging
           if (Test-Path "README.md") { Copy-Item "README.md" -Destination $staging }
           if (Test-Path "LICENSE") { Copy-Item "LICENSE" -Destination $staging }
           Compress-Archive -Path $staging/* -DestinationPath "$staging.zip"
