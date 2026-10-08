@@ -71,11 +71,11 @@ jobs:
 
       - name: Build Binary (Native)
         if: ${{ !matrix.use_cross }}
-        run: cargo build --locked --release --target ${{ matrix.target }} --package fsize-cli
+        run: cargo build --locked --release --target ${{ matrix.target }} --package fscli
 
       - name: Build Binary (Cross)
         if: matrix.use_cross
-        run: cross build --locked --release --target ${{ matrix.target }} --package fsize-cli
+        run: cross build --locked --release --target ${{ matrix.target }} --package fscli
 
       - name: Package Archive (POSIX)
         if: matrix.archive == 'tar.gz'
@@ -92,7 +92,7 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $staging = "fsize-${{ github.ref_name }}-${{ matrix.target }}"
+          $staging = "fs-${{ github.ref_name }}-${{ matrix.target }}"
           New-Item -ItemType Directory -Path $staging -Force | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/fs.exe" -Destination $staging
           if (Test-Path "README.md") { Copy-Item "README.md" -Destination $staging }
