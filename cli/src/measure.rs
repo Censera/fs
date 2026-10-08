@@ -1,5 +1,5 @@
 use fscore::{
-    Color, DiskUsageInfo, fsError, WalkOptions, WalkOutcome, compute_total_size, disk_usage,
+    Color, DiskUsageInfo, FsError, WalkOptions, WalkOutcome, compute_total_size, disk_usage,
 };
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,7 +10,7 @@ pub fn opts(
     excludes: &[String],
     max_depth: Option<usize>,
     follow_links: bool,
-) -> Result<WalkOptions, fsError> {
+) -> Result<WalkOptions, FsError> {
     Ok(WalkOptions {
         max_depth,
         excludes: WalkOptions::compile_excludes(excludes)?,
@@ -18,26 +18,26 @@ pub fn opts(
     })
 }
 
-pub fn size(path: &Path, opts: &WalkOptions) -> Result<WalkOutcome, fsError> {
+pub fn size(path: &Path, opts: &WalkOptions) -> Result<WalkOutcome, FsError> {
     progress(path, opts)
 }
 
-pub fn metadata(path: &Path) -> Result<u128, fsError> {
+pub fn metadata(path: &Path) -> Result<u128, FsError> {
     fscore::metadata_size(path)
 }
 
-pub fn disk(path: &Path) -> Result<DiskUsageInfo, fsError> {
+pub fn disk(path: &Path) -> Result<DiskUsageInfo, FsError> {
     disk_usage(path)
 }
 
-pub fn entries(path: &Path, opts: &WalkOptions) -> Result<Vec<PathBuf>, fsError> {
+pub fn entries(path: &Path, opts: &WalkOptions) -> Result<Vec<PathBuf>, FsError> {
     let mut out = Vec::new();
 
-    for entry in std::fs::read_dir(path).map_err(|source| fsError::Io {
+    for entry in std::fs::read_dir(path).map_err(|source| FsError::Io {
         path: path.to_owned(),
         source,
     })? {
-        let entry = entry.map_err(|source| fsError::Io {
+        let entry = entry.map_err(|source| FsError::Io {
             path: path.to_owned(),
             source,
         })?;
@@ -59,7 +59,7 @@ pub fn entries(path: &Path, opts: &WalkOptions) -> Result<Vec<PathBuf>, fsError>
     Ok(out)
 }
 
-fn progress(path: &Path, opts: &WalkOptions) -> Result<WalkOutcome, fsError> {
+fn progress(path: &Path, opts: &WalkOptions) -> Result<WalkOutcome, FsError> {
     use std::io::IsTerminal;
 
     const SPIN: [&str; 7] = ["/  ", "// ", "///", " //", "  /", "   ", "   "];

@@ -4,7 +4,7 @@ use crate::{
     measure,
 };
 
-use fscore::{Color, fsError, WalkOptions, format_size};
+use fscore::{Color, FsError, WalkOptions, format_size};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,7 +22,7 @@ pub fn run(args: Args) {
     }
 }
 
-fn report(error: &fsError) {
+fn report(error: &FsError) {
     eprintln!(
         "{}{}error{}: {}",
         Color::bold(),
@@ -33,7 +33,7 @@ fn report(error: &fsError) {
 }
 
 /// Ok(false): the run finished, but at least one path failed (already reported).
-fn handle(args: Args) -> Result<bool, fsError> {
+fn handle(args: Args) -> Result<bool, FsError> {
     if args.disk_usage {
         disk(&args)?;
 
@@ -55,7 +55,7 @@ fn handle(args: Args) -> Result<bool, fsError> {
     }
 }
 
-fn single(path: &Path, args: &Args, opts: &WalkOptions) -> Result<(), fsError> {
+fn single(path: &Path, args: &Args, opts: &WalkOptions) -> Result<(), FsError> {
     let size = size(path, args, opts)?;
 
     if args.json {
@@ -84,7 +84,7 @@ fn entry_json(path: &Path, size: u128, args: &Args, write: impl FnOnce(&[(&str, 
     ]);
 }
 
-fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions) -> Result<bool, fsError> {
+fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions) -> Result<bool, FsError> {
     let names = paths.iter().map(|path| name(path)).collect::<Vec<_>>();
 
     let show_total = paths.len() > 1;
@@ -152,7 +152,7 @@ fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions) -> Result<bool, fsEr
     Ok(clean)
 }
 
-fn size(path: &Path, args: &Args, opts: &WalkOptions) -> Result<u128, fsError> {
+fn size(path: &Path, args: &Args, opts: &WalkOptions) -> Result<u128, FsError> {
     if args.metadata {
         return measure::metadata(path);
     }
@@ -210,7 +210,7 @@ fn trim(name: &str) -> String {
     name
 }
 
-fn disk(args: &Args) -> Result<(), fsError> {
+fn disk(args: &Args) -> Result<(), FsError> {
     #[cfg(unix)]
     let path = PathBuf::from("/");
 

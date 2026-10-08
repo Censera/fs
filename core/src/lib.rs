@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::{env, fs};
 
 #[derive(Debug, thiserror::Error)]
-pub enum fsError {
+pub enum FsError {
     #[error("I/O error for `{path}`: {source}")]
     Io { path: PathBuf, source: io::Error },
 
@@ -251,11 +251,11 @@ pub struct WalkOptions {
 }
 
 impl WalkOptions {
-    pub fn compile_excludes(patterns: &[String]) -> Result<Vec<glob::Pattern>, fsError> {
+    pub fn compile_excludes(patterns: &[String]) -> Result<Vec<glob::Pattern>, FsError> {
         patterns
             .iter()
             .map(|pattern| {
-                glob::Pattern::new(pattern).map_err(|source| fsError::InvalidPattern {
+                glob::Pattern::new(pattern).map_err(|source| FsError::InvalidPattern {
                     pattern: pattern.clone(),
                     source,
                 })
@@ -286,13 +286,13 @@ pub fn compute_total_size(
     path: &Path,
     opts: &WalkOptions,
     progress: Option<&AtomicU64>,
-) -> Result<WalkOutcome, fsError> {
+) -> Result<WalkOutcome, FsError> {
     let meta = if opts.follow_links {
         fs::metadata(path)
     } else {
         fs::symlink_metadata(path)
     }
-    .map_err(|source| fsError::Io {
+    .map_err(|source| FsError::Io {
         path: path.to_owned(),
         source,
     })?;
@@ -452,8 +452,8 @@ pub fn compute_total_size(
     Ok(WalkOutcome { total, warnings })
 }
 
-pub fn metadata_size(path: &Path) -> Result<u128, fsError> {
-    let meta = fs::symlink_metadata(path).map_err(|source| fsError::Io {
+pub fn metadata_size(path: &Path) -> Result<u128, FsError> {
+    let meta = fs::symlink_metadata(path).map_err(|source| FsError::Io {
         path: path.to_owned(),
         source,
     })?;
@@ -483,22 +483,22 @@ impl DiskUsageInfo {
 }
 
 #[cfg(unix)]
-pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, fsError> {
+pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, FsError> {
     use std::ffi::CString;
     use std::mem::MaybeUninit;
 
     let path = path
         .to_str()
-        .ok_or_else(|| fsError::InvalidPath(path.to_owned()))?;
+        .ok_or_else(|| FsError::InvalidPath(path.to_owned()))?;
 
-    let path = CString::new(path).map_err(|_| fsError::InvalidPath(PathBuf::from(path)))?;
+    let path = CString::new(path).map_err(|_| FsError::InvalidPath(PathBuf::from(path)))?;
 
     let mut stat = MaybeUninit::<libc::statvfs>::uninit();
 
     let result = unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) };
 
     if result != 0 {
-        return Err(fsError::Io {
+        return Err(FsError::Io {
             path: PathBuf::from(path.to_string_lossy().into_owned()),
             source: io::Error::last_os_error(),
         });
@@ -515,7 +515,7 @@ pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, fsError> {
 }
 
 #[cfg(windows)]
-pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, fsError> {
+pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, FsError> {
     use std::os::windows::ffi::OsStrExt;
 
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
@@ -534,7 +534,7 @@ pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, fsError> {
         unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut available, &mut total, &mut free) };
 
     if result == 0 {
-        return Err(fsError::Io {
+        return Err(FsError::Io {
             path: path.to_owned(),
             source: io::Error::last_os_error(),
         });
@@ -548,8 +548,8 @@ pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, fsError> {
 }
 
 #[cfg(not(any(unix, windows)))]
-pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, fsError> {
-    Err(fsError::Unsupported(format!(
+pub fn disk_usage(path: &Path) -> Result<DiskUsageInfo, FsError> {
+    Err(FsError::Unsupported(format!(
         "disk usage queries need statvfs (unix) or GetDiskFreeSpaceExW (windows): {}",
         path.display()
     )))
@@ -581,7 +581,7 @@ pub enum Unit {
 }
 
 impl std::str::FromStr for Unit {
-    type Err = fsError;
+    type Err = FsError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.trim().to_lowercase().as_str() {
@@ -606,7 +606,7 @@ impl std::str::FromStr for Unit {
             "yib" => Ok(Self::YiB),
             "rib" => Ok(Self::RiB),
             "qib" => Ok(Self::QiB),
-            other => Err(fsError::InvalidUnit(other.to_owned())),
+            other => Err(FsError::InvalidUnit(other.to_owned())),
         }
     }
 }
