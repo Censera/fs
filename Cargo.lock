@@ -68,13 +68,28 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 name = "fscli"
 version = "1.0.0"
 dependencies = [
- "fscore",
+ "fscore 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json",
 ]
 
 [[package]]
 name = "fscore"
 version = "1.0.0"
+dependencies = [
+ "glob",
+ "jwalk",
+ "libc",
+ "rayon",
+ "serde",
+ "thiserror",
+ "windows-sys",
+]
+
+[[package]]
+name = "fscore"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8f53ceb4e02c078897fa2cd6747eab7cebd107acfb27e904e4a47dcfe87d764"
 dependencies = [
  "glob",
  "jwalk",

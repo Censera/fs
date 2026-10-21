@@ -5,7 +5,6 @@ use crate::{
 };
 
 use fscore::{Color, FsError, WalkOptions, format_size};
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -32,7 +31,7 @@ fn report(error: &FsError) {
     );
 }
 
-/// Ok(false): the run finished, but at least one path failed (already reported).
+/// Ok(false): the run finished, but at least one path failed
 fn handle(args: Args) -> Result<bool, FsError> {
     if args.disk_usage {
         disk(&args)?;
