@@ -1,7 +1,7 @@
 use std::io::IsTerminal;
 
 const DIRECTORY: &str = "";
-const FILE: &str = "";
+const FILE: &str = "";
 
 const DIRECTORY_ICONS: &[(&str, &str)] = &[
     (".git", ""),
@@ -9,7 +9,7 @@ const DIRECTORY_ICONS: &[(&str, &str)] = &[
     (".vscode", ""),
     (".idea", ""),
     ("node_modules", ""),
-    ("src", ""),
+    ("src", "󰣞"),
     ("tests", "󰙨"),
     ("target", ""),
     ("build", "󰉋"),
@@ -57,7 +57,8 @@ const NAME_ICONS: &[(&str, &str)] = &[
     ("composer.lock", ""),
     ("gemfile", ""),
     ("gemfile.lock", ""),
-    ("readme", ""),
+    ("readme", ""),
+    ("README.md", ""),
     ("license", ""),
     ("license.md", ""),
     (".gitignore", ""),
@@ -348,7 +349,7 @@ pub fn for_entry(name: &str, is_dir: bool) -> &'static str {
         .iter()
         .find(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
     {
-        return *icon;
+        return icon;
     }
 
     let extension = name
@@ -401,6 +402,6 @@ mod tests {
     #[test]
     fn unknown_files_use_a_generic_icon() {
         assert_eq!(for_entry("unknown.extension", false), FILE);
-        assert_eq!(for_entry("README", false), "");
+        assert_eq!(for_entry("README", false), "");
     }
 }

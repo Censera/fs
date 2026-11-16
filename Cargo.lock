@@ -68,7 +68,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 name = "fscli"
 version = "1.0.0"
 dependencies = [
- "fscore 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fscore",
  "serde_json",
 ]
 
@@ -84,7 +84,6 @@ dependencies = [
  "thiserror",
  "windows-sys",
 ]
-
 
 [[package]]
 name = "glob"

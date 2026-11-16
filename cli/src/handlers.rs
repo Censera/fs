@@ -96,7 +96,7 @@ struct Entry {
 fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions, sort: bool) -> Result<bool, FsError> {
     let show_total = paths.len() > 1;
     let mut entries = Vec::with_capacity(paths.len());
-    let mut json = args.json.then(|| Json::new(args.json_fmt).list());
+    let json = args.json.then(|| Json::new(args.json_fmt).list());
     let mut total = 0u128;
     let mut clean = true;
 

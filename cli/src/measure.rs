@@ -62,7 +62,7 @@ pub fn entries(path: &Path, opts: &WalkOptions) -> Result<Vec<PathBuf>, FsError>
 fn progress(path: &Path, opts: &WalkOptions) -> Result<WalkOutcome, FsError> {
     use std::io::IsTerminal;
 
-    const SPIN: [&str; 7] = ["/  ", "// ", "///", " //", "  /", "   ", "   "];
+    const SPIN: [&str; 6] = ["!..", ".!.", "..!", "...", "...", "..."];
 
     let count = Arc::new(AtomicU64::new(0));
     let done = Arc::new(AtomicBool::new(false));
