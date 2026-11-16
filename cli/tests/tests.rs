@@ -400,6 +400,24 @@ fn disk_usage() {
     assert!(lines[2].contains(" | "));
 }
 
+#[cfg(unix)]
+#[test]
+fn disk_usage_segments_have_background_colors() {
+    let result = run_env(&["--disk-usage"], "FORCE_COLOR", "1");
+    assert!(result.status.success(), "{}", err(&result));
+
+    let line = out(&result).lines().nth(2).unwrap().to_owned();
+
+    assert!(
+        ["\x1b[41m", "\x1b[43m", "\x1b[44m"]
+            .iter()
+            .any(|background| line.contains(background)),
+        "{line:?}"
+    );
+    assert!(line.contains("\x1b[42m"), "{line:?}");
+    assert_eq!(line.matches("\x1b[0m").count(), 2, "{line:?}");
+}
+
 #[test]
 fn disk_usage_json() {
     let result = run(&["--disk-usage", "--json"]);
@@ -829,13 +847,13 @@ fn listing_uses_name_and_size_colors() {
     let stdout = out(&result);
     let lines: Vec<_> = stdout.lines().collect();
 
-    assert!(lines[0].starts_with("\x1b[90m.hidden"), "{stdout:?}");
-    assert!(lines[0].contains("\x1b[90m5\x1b[0m"), "{stdout:?}");
+    assert!(lines[0].starts_with("\x1b[33m\x1b[1m.hidden"), "{stdout:?}");
+    assert!(lines[0].contains("\x1b[1m\x1b[32m5\x1b[0m"), "{stdout:?}");
 
-    assert!(lines[1].starts_with("\x1b[34mfolder/"), "{stdout:?}");
+    assert!(lines[1].starts_with("\x1b[34m\x1b[1mfolder/"), "{stdout:?}");
     assert!(lines[1].contains("\x1b[1m\x1b[32m10\x1b[0m"), "{stdout:?}");
 
-    assert!(lines[2].starts_with("\x1b[33mfile"), "{stdout:?}");
+    assert!(lines[2].starts_with("\x1b[33m\x1b[1mfile"), "{stdout:?}");
     assert!(lines[2].contains("\x1b[1m\x1b[32m15\x1b[0m"), "{stdout:?}");
 
     assert!(

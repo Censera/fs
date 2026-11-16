@@ -85,20 +85,6 @@ dependencies = [
  "windows-sys",
 ]
 
-[[package]]
-name = "fscore"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8f53ceb4e02c078897fa2cd6747eab7cebd107acfb27e904e4a47dcfe87d764"
-dependencies = [
- "glob",
- "jwalk",
- "libc",
- "rayon",
- "serde",
- "thiserror",
- "windows-sys",
-]
 
 [[package]]
 name = "glob"

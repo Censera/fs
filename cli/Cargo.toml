@@ -13,5 +13,5 @@ name = "fs"
 path = "src/main.rs"
 
 [dependencies]
-fscore = "1.0.0"
+fscore = { path = "../core" }
 serde_json = "1.0"

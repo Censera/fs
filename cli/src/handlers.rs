@@ -1,5 +1,6 @@
 use crate::{
     cli::Args,
+    icons,
     json::{Json, Value},
     measure,
 };
@@ -89,6 +90,7 @@ struct Entry {
     size: u128,
     is_dir: bool,
     hidden: bool,
+    icon: &'static str,
 }
 
 fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions, sort: bool) -> Result<bool, FsError> {
@@ -114,12 +116,18 @@ fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions, sort: bool) -> Resul
         };
 
         total += size;
+        let icon = path
+            .file_name()
+            .map(|file_name| icons::for_entry(&file_name.to_string_lossy(), is_dir))
+            .unwrap_or_else(|| icons::for_entry(&name, is_dir));
+
         entries.push(Entry {
             path: path.to_owned(),
             name,
             size,
             is_dir,
             hidden,
+            icon,
         });
     }
 
@@ -166,26 +174,29 @@ fn list(paths: &[PathBuf], args: &Args, opts: &WalkOptions, sort: bool) -> Resul
         .map(|entry| entry.name.chars().count())
         .max()
         .unwrap_or(0);
+    let show_icons = icons::enabled();
 
     for entry in &entries {
-        let name = format!("{:<width$}", entry.name);
-        let size = format(entry.size, args);
-
-        let (name_color, size_color, bold) = if entry.hidden {
-            (Color::bright_black(), Color::bright_black(), "")
-        } else if entry.is_dir {
-            (Color::blue(), Color::green(), Color::bold())
+        let name = if show_icons {
+            format!("{} {:<width$}", entry.icon, entry.name)
         } else {
-            (Color::yellow(), Color::green(), Color::bold())
+            format!("{:<width$}", entry.name)
+        };
+        let size = format(entry.size, args);
+        let name_color = if entry.is_dir {
+            Color::blue()
+        } else {
+            Color::yellow()
         };
 
         println!(
-            "{}{}{}    {}{}{}{}",
+            "{}{}{}{}    {}{}{}{}",
             name_color,
+            Color::bold(),
             name,
             Color::reset(),
-            bold,
-            size_color,
+            Color::bold(),
+            Color::green(),
             size,
             Color::reset(),
         );
@@ -319,12 +330,12 @@ fn disk(args: &Args) -> Result<(), FsError> {
         .min(width - available_min);
     let available_width = width - used_width;
 
-    let color = if percent >= 90.0 {
-        Color::red()
+    let used_background = if percent >= 90.0 {
+        Color::bg_red()
     } else if percent >= 70.0 {
-        Color::yellow()
+        Color::bg_yellow()
     } else {
-        ""
+        Color::bg_blue()
     };
 
     println!(
@@ -334,8 +345,8 @@ fn disk(args: &Args) -> Result<(), FsError> {
     );
     println!(
         "{}{}",
-        segment(&used_label, used_width, color),
-        segment(&available_label, available_width, Color::green()),
+        segment(&used_label, used_width, used_background),
+        segment(&available_label, available_width, Color::bg_green()),
     );
 
     Ok(())
@@ -352,15 +363,16 @@ fn centered(label: &str, width: usize) -> String {
     )
 }
 
-fn segment(label: &str, width: usize, color: &str) -> String {
+fn segment(label: &str, width: usize, background: &str) -> String {
     let padding = width.saturating_sub(label.len() + 2);
 
     format!(
-        "[{}{}{}{}{}]",
+        "{}[{}{}{}{}]{}",
+        background,
         " ".repeat(padding / 2),
-        color,
+        Color::bright_white(),
         label,
-        Color::reset(),
         " ".repeat(padding - padding / 2),
+        Color::reset(),
     )
 }

@@ -135,6 +135,22 @@ impl Color {
     pub fn bright_white() -> &'static str {
         Self::code("\x1b[97m")
     }
+
+    pub fn bg_red() -> &'static str {
+        Self::code("\x1b[41m")
+    }
+
+    pub fn bg_green() -> &'static str {
+        Self::code("\x1b[42m")
+    }
+
+    pub fn bg_yellow() -> &'static str {
+        Self::code("\x1b[43m")
+    }
+
+    pub fn bg_blue() -> &'static str {
+        Self::code("\x1b[44m")
+    }
 }
 
 #[cfg(windows)]
