@@ -182,12 +182,16 @@ fn enable_windows_ansi() {
 fn enable_windows_ansi() {}
 
 #[cfg(unix)]
-fn is_virtual_fs(path: &Path) -> bool {
-    path.starts_with("/proc") || path.starts_with("/sys") || path.starts_with("/dev")
+fn is_virtual_fs_entry(parent: &Path, name: &std::ffi::OsStr) -> bool {
+    parent.starts_with("/proc")
+        || parent.starts_with("/sys")
+        || parent.starts_with("/dev")
+        || (parent == Path::new("/")
+            && matches!(name.to_str(), Some("proc") | Some("sys") | Some("dev")))
 }
 
 #[cfg(not(unix))]
-fn is_virtual_fs(_path: &Path) -> bool {
+fn is_virtual_fs_entry(_parent: &Path, _name: &std::ffi::OsStr) -> bool {
     false
 }
 
@@ -346,26 +350,32 @@ pub fn compute_total_size(
                     return true;
                 };
 
-                let entry_path = entry.path();
-
-                if is_virtual_fs(&entry_path) || excluded(&entry_path, &excludes) {
+                if is_virtual_fs_entry(_parent, entry.file_name()) {
                     return false;
                 }
 
-                if follow_links
-                    && entry.path_is_symlink()
-                    && entry.file_type().is_dir()
-                    && is_symlink_cycle(&entry_path)
-                {
-                    push(
-                        &warnings_filter,
-                        format!(
-                            "Skipped `{}`: already-visited directory (symlink cycle)",
-                            entry_path.display()
-                        ),
-                    );
+                if !excludes.is_empty() {
+                    let entry_path = entry.path();
 
-                    return false;
+                    if excluded(&entry_path, &excludes) {
+                        return false;
+                    }
+                }
+
+                if follow_links && entry.path_is_symlink() && entry.file_type().is_dir() {
+                    let entry_path = entry.path();
+
+                    if is_symlink_cycle(&entry_path) {
+                        push(
+                            &warnings_filter,
+                            format!(
+                                "Skipped `{}`: already-visited directory (symlink cycle)",
+                                entry_path.display()
+                            ),
+                        );
+
+                        return false;
+                    }
                 }
 
                 true
@@ -378,78 +388,96 @@ pub fn compute_total_size(
 
     let hardlinks = Mutex::new(HashSet::<(u64, u64)>::new());
 
+    // Batch progress updates instead of contending on one atomic per file.
     let total = walker
         .into_iter()
         .par_bridge()
-        .filter_map(|entry| {
-            let entry = match entry {
-                Ok(entry) => entry,
+        .fold(
+            || (0u128, 0u64),
+            |(mut total, mut count), entry| {
+                let entry = match entry {
+                    Ok(entry) => entry,
 
-                Err(error) => {
-                    if let Some(ancestor) = error.loop_ancestor() {
-                        let child = error.path().unwrap_or_else(|| Path::new(""));
+                    Err(error) => {
+                        if let Some(ancestor) = error.loop_ancestor() {
+                            let child = error.path().unwrap_or_else(|| Path::new(""));
 
-                        push(
-                            &warnings,
-                            format!(
-                                "Skipped `{}`: already-visited directory \
-                                 (symlink cycle via `{}`)",
-                                child.display(),
-                                ancestor.display()
-                            ),
-                        );
-                    } else if let Some(path) = error.path() {
-                        push(
-                            &warnings,
-                            format!("Cannot access `{}`: {error}", path.display()),
-                        );
-                    } else {
-                        push(&warnings, format!("{error}"));
+                            push(
+                                &warnings,
+                                format!(
+                                    "Skipped `{}`: already-visited directory \\
+                                     (symlink cycle via `{}`)",
+                                    child.display(),
+                                    ancestor.display()
+                                ),
+                            );
+                        } else if let Some(path) = error.path() {
+                            push(
+                                &warnings,
+                                format!("Cannot access `{}`: {error}", path.display()),
+                            );
+                        } else {
+                            push(&warnings, format!("{error}"));
+                        }
+
+                        return (total, count);
                     }
+                };
 
-                    return None;
-                }
-            };
-
-            if let Some(error) = entry.read_children_error.as_ref() {
-                push(
-                    &warnings,
-                    format!("Cannot access `{}`: {error}", entry.path().display()),
-                );
-            }
-
-            let meta = match entry.metadata() {
-                Ok(meta) => meta,
-
-                Err(error) => {
+                if let Some(error) = entry.read_children_error.as_ref() {
                     push(
                         &warnings,
                         format!("Cannot access `{}`: {error}", entry.path().display()),
                     );
-
-                    return None;
                 }
-            };
 
-            if !meta.is_file() {
-                return None;
-            }
-
-            if let Some(id) = hardlink_id(&meta) {
-                let mut seen = hardlinks
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-                if !seen.insert(id) {
-                    return None;
+                // jwalk already knows the file type; avoid a metadata syscall for directories.
+                if !entry.file_type().is_file() {
+                    return (total, count);
                 }
-            }
 
+                let meta = match entry.metadata() {
+                    Ok(meta) => meta,
+
+                    Err(error) => {
+                        push(
+                            &warnings,
+                            format!("Cannot access `{}`: {error}", entry.path().display()),
+                        );
+
+                        return (total, count);
+                    }
+                };
+
+                if !meta.is_file() {
+                    return (total, count);
+                }
+
+                if let Some(id) = hardlink_id(&meta) {
+                    let mut seen = hardlinks
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+                    if !seen.insert(id) {
+                        return (total, count);
+                    }
+                }
+
+                total += meta.len() as u128;
+
+                if progress.is_some() {
+                    count += 1;
+                }
+
+                (total, count)
+            },
+        )
+        .map(|(total, count)| {
             if let Some(counter) = progress {
-                counter.fetch_add(1, Ordering::Relaxed);
+                counter.fetch_add(count, Ordering::Relaxed);
             }
 
-            Some(meta.len() as u128)
+            total
         })
         .sum::<u128>();
 
