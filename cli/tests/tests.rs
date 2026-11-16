@@ -305,12 +305,11 @@ fn multiple_paths() {
     let lines: Vec<_> = stdout.lines().collect();
 
     assert_eq!(lines.len(), 3, "{stdout}");
-    assert!(lines[0].contains("a"));
-    assert!(lines[0].contains("10"));
-    assert!(lines[1].contains("b"));
-    assert!(lines[1].contains("20"));
-    assert!(lines[2].starts_with("total"));
-    assert!(lines[2].ends_with("30"));
+    assert!(lines[0].contains("b"));
+    assert!(lines[0].contains("20"));
+    assert!(lines[1].contains("a"));
+    assert!(lines[1].contains("10"));
+    assert!(lines[2].trim_start().starts_with("30"));
 }
 
 #[test]
@@ -390,11 +389,15 @@ fn disk_usage() {
     assert!(result.status.success());
 
     let stdout = out(&result);
+    let lines: Vec<_> = stdout.lines().collect();
 
-    assert!(stdout.contains("total"));
-    assert!(stdout.contains("used"));
-    assert!(stdout.contains("free"));
-    assert!(stdout.contains("available"));
+    assert_eq!(lines.len(), 3, "{stdout}");
+    assert!(lines[0].starts_with("total "));
+    assert!(lines[0].contains(" / free "));
+    assert!(lines[1].contains("used"));
+    assert!(lines[1].contains("available"));
+    assert!(lines[2].starts_with("["));
+    assert!(lines[2].contains(" | "));
 }
 
 #[test]
@@ -481,7 +484,6 @@ fn disk_exclusive() {
     let cases = [
         vec!["-d", "-m"],
         vec!["-d", "-L"],
-        vec!["-d", "-b"],
         vec!["-d", "-r"],
         vec!["-d", "-u", "GB"],
         vec!["-d", "--exclude", "*.txt"],
@@ -515,6 +517,13 @@ fn help() {
     assert!(stdout.contains("Usage:"));
     assert!(stdout.contains("Options:"));
     assert!(stdout.contains("Examples:"));
+    assert!(stdout.contains("-r, --raw"));
+    assert!(!stdout.contains("--byte"));
+    assert!(
+        !stdout
+            .lines()
+            .any(|line| line.trim_start().starts_with("-b,"))
+    );
 }
 
 #[test]
@@ -698,9 +707,56 @@ fn listing_current_directory() {
     let lines: Vec<_> = stdout.lines().collect();
 
     assert_eq!(lines.len(), 3, "{stdout}");
-    assert!(lines[0].starts_with("a ") && lines[0].ends_with("10"));
-    assert!(lines[1].starts_with("sub/") && lines[1].ends_with("20"));
-    assert!(lines[2].starts_with("total") && lines[2].ends_with("30"));
+    assert!(lines[0].starts_with("sub/") && lines[0].ends_with("20"));
+    assert!(lines[1].starts_with("a ") && lines[1].ends_with("10"));
+    assert!(lines[2].trim_start().starts_with("30"));
+}
+
+#[test]
+fn current_directory_listing_groups_and_sorts_entries() {
+    let tmp = Temp::new();
+
+    file(&tmp.path.join(".gitignore"), 1);
+
+    let hidden = tmp.path.join(".github");
+    fs::create_dir(&hidden).unwrap();
+    file(&hidden.join("config"), 5);
+
+    let small_dir = tmp.path.join("small");
+    fs::create_dir(&small_dir).unwrap();
+    file(&small_dir.join("file"), 2);
+
+    let large_dir = tmp.path.join("large");
+    fs::create_dir(&large_dir).unwrap();
+    file(&large_dir.join("file"), 20);
+
+    file(&tmp.path.join("small.txt"), 3);
+    file(&tmp.path.join("large.txt"), 10);
+
+    let result = run_in(&tmp.path, &["--raw"]);
+    assert!(result.status.success(), "{}", err(&result));
+
+    let stdout = out(&result);
+    let lines: Vec<_> = stdout.lines().collect();
+    let names: Vec<_> = lines
+        .iter()
+        .take(6)
+        .map(|line| line.split_whitespace().next().unwrap())
+        .collect();
+
+    assert_eq!(
+        names,
+        [
+            ".github/",
+            ".gitignore",
+            "large/",
+            "small/",
+            "large.txt",
+            "small.txt",
+        ],
+        "{stdout}"
+    );
+    assert!(lines[6].trim_start().starts_with("41"), "{stdout}");
 }
 
 #[cfg(unix)]
@@ -748,16 +804,24 @@ fn symlinked_directory_that_is_not_a_cycle_is_followed() {
 }
 
 #[test]
-fn total_is_blue_and_not_bold() {
+fn listing_uses_name_and_size_colors() {
     let tmp = Temp::new();
-    let a = tmp.path.join("a");
-    let b = tmp.path.join("b");
+    let hidden = tmp.path.join(".hidden");
+    let folder = tmp.path.join("folder");
+    let file_path = tmp.path.join("file");
 
-    file(&a, 10);
-    file(&b, 20);
+    file(&hidden, 5);
+    fs::create_dir(&folder).unwrap();
+    file(&folder.join("inside"), 10);
+    file(&file_path, 15);
 
     let result = run_env(
-        &["--raw", a.to_str().unwrap(), b.to_str().unwrap()],
+        &[
+            "--raw",
+            hidden.to_str().unwrap(),
+            folder.to_str().unwrap(),
+            file_path.to_str().unwrap(),
+        ],
         "FORCE_COLOR",
         "1",
     );
@@ -765,14 +829,23 @@ fn total_is_blue_and_not_bold() {
     let stdout = out(&result);
     let lines: Vec<_> = stdout.lines().collect();
 
-    assert!(lines[0].starts_with("\x1b[1m\x1b[34m"), "{stdout:?}");
+    assert!(lines[0].starts_with("\x1b[90m.hidden"), "{stdout:?}");
+    assert!(lines[0].contains("\x1b[90m5\x1b[0m"), "{stdout:?}");
 
-    assert!(lines[2].starts_with("\x1b[34mtotal"), "{stdout:?}");
-    assert!(!lines[2].contains("\x1b[1m"), "{stdout:?}");
+    assert!(lines[1].starts_with("\x1b[34mfolder/"), "{stdout:?}");
+    assert!(lines[1].contains("\x1b[1m\x1b[32m10\x1b[0m"), "{stdout:?}");
+
+    assert!(lines[2].starts_with("\x1b[33mfile"), "{stdout:?}");
+    assert!(lines[2].contains("\x1b[1m\x1b[32m15\x1b[0m"), "{stdout:?}");
+
+    assert!(
+        lines[3].trim_start().starts_with("\x1b[1m\x1b[32m30"),
+        "{stdout:?}"
+    );
 }
 
 #[test]
-fn b_is_r() {
+fn raw_flags() {
     let tmp = Temp::new();
     let path = tmp.path.join("file");
 
@@ -780,28 +853,22 @@ fn b_is_r() {
 
     let path = path.to_str().unwrap();
 
-    for flag in ["-r", "--raw", "--byte", "-b"] {
+    for flag in ["-r", "--raw"] {
         let result = run(&[flag, path]);
 
         assert!(result.status.success(), "{flag}");
         assert_eq!(out(&result), "1234\n", "{flag}");
     }
+}
 
-    for args in [
-        vec!["-br"],
-        vec!["-rb"],
-        vec!["-b", "--raw"],
-        vec!["--byte", "-b"],
-    ] {
-        let result = run(&args);
+#[test]
+fn removed_raw_aliases_are_rejected() {
+    for flag in ["-b", "--byte"] {
+        let result = run(&[flag]);
 
-        assert!(!result.status.success(), "{args:?}");
-        assert!(err(&result).contains("same same"), "{args:?}");
+        assert!(!result.status.success(), "{flag}");
+        assert!(err(&result).contains("unknown option"), "{flag}");
     }
-
-    let result = run(&["-b", "-u", "KB", path]);
-
-    assert!(err(&result).contains("raw bytes or only bytes"));
 }
 
 #[test]

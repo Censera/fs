@@ -16,7 +16,6 @@ pub struct Args {
     pub max_depth: Option<usize>,
     pub binary: bool,
     pub raw: bool,
-    pub b_flag: bool,
     pub in_unit: Option<Unit>,
     pub json: bool,
     pub json_fmt: bool,
@@ -32,7 +31,6 @@ pub fn parse() -> Args {
         max_depth: None,
         binary: false,
         raw: false,
-        b_flag: false,
         in_unit: None,
         json: false,
         json_fmt: false,
@@ -67,8 +65,6 @@ pub fn parse() -> Args {
     }
 
     validate(&args);
-
-    args.raw |= args.b_flag;
 
     args
 }
@@ -120,7 +116,7 @@ fn long(arg: &str, iter: &mut impl Iterator<Item = OsString>, args: &mut Args) {
             args.binary = true;
         }
 
-        "--raw" | "--byte" => {
+        "--raw" => {
             check_disk(args, name);
             no_value(name, attached);
             args.raw = true;
@@ -195,11 +191,6 @@ fn short(arg: &str, iter: &mut impl Iterator<Item = OsString>, args: &mut Args) 
                 args.follow_symlinks = true;
             }
 
-            'b' => {
-                check_disk(args, "-b");
-                args.b_flag = true;
-            }
-
             'r' => {
                 check_disk(args, "-r");
                 args.raw = true;
@@ -254,7 +245,7 @@ fn set_disk(args: &mut Args, attached: Option<&str>) {
         error("`--disk-usage` cannot be used with `--binary`");
     }
 
-    if args.raw || args.b_flag {
+    if args.raw {
         error("`--disk-usage` cannot be used with `--raw`");
     }
 
@@ -325,13 +316,7 @@ fn unit(option: &str, value: &str) -> Unit {
 }
 
 fn validate(args: &Args) {
-    if args.b_flag && args.raw {
-        error("same same");
-    }
-
-    let raw = args.raw || args.b_flag;
-
-    if args.binary && raw {
+    if args.binary && args.raw {
         error("options `--binary` and `-r` cannot be used together");
     }
 
@@ -339,7 +324,7 @@ fn validate(args: &Args) {
         error("options `--binary` and `-u`, pick one");
     }
 
-    if raw && args.in_unit.is_some() {
+    if args.raw && args.in_unit.is_some() {
         error("do you want raw bytes or only bytes?");
     }
 
@@ -416,7 +401,7 @@ fn help() -> ! {
 
     option("    --binary", "Use binary units");
 
-    option("    -r, -b, --raw, --byte", "Show bytes without formatting");
+    option("    -r, --raw", "Show bytes without formatting");
 
     argument("    -u, --unit", "UNIT", "Use a specific unit");
 
